@@ -11,6 +11,7 @@ namespace NoFences.Win32
         private static Icon folderIcon;
 
         public static Icon FolderLarge => folderIcon ?? (folderIcon = GetStockIcon(SHSIID_FOLDER, SHGSI_LARGEICON));
+        public static Icon UnknownFile { get; } = SystemIcons.Question;
 
         private static Icon GetStockIcon(uint type, uint size)
         {

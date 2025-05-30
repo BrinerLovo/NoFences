@@ -5,6 +5,7 @@ namespace NoFences.Win32
 {
     public class WindowUtil
     {
+        public const int WM_NCCALCSIZE = 0x0083; // Controls non-client area (title bar, borders)
         public const int WM_NCHITTEST = 0x84;          // variables for dragging the form
         public const int HTCLIENT = 0x1;
         public const int HTCAPTION = 0x2;
@@ -20,6 +21,8 @@ namespace NoFences.Win32
         public const int WM_SYSCOMMAND = 274;
         public const int SC_MAXIMIZE = 0xF030;
         public const int SC_MINIMIZE = 0xF020;
+        public const int WM_MOVING = 0x0216;
+        public const int WM_SIZING = 0x0214;
 
         public const UInt32 SWP_NOSIZE = 0x0001;
         public const UInt32 SWP_NOMOVE = 0x0002;
@@ -30,6 +33,23 @@ namespace NoFences.Win32
         public const int WM_SETFOCUS = 0x0007;
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         public const int WM_WINDOWPOSCHANGING = 0x0046;
+        public const uint SWP_SHOWWINDOW = 0x0040;
+
+        public const int WM_NCLBUTTONDOWN = 0xA1; // Non-client area left button down (Title bar click)
+        public const int WM_NCLBUTTONDBLCLK = 0xA3; // Non-client area double click
+        public const int WM_NCLBUTTONUP = 0xA2; // Non-client area left button up
+
+        private const int DWMWA_CAPTION_HEIGHT = 36; // Adjust the title bar height
+        private const int DWMWA_BORDER_COLOR = 34;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
 
         [DllImport("user32.dll")]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X,
@@ -44,8 +64,21 @@ namespace NoFences.Win32
 
         [DllImport("user32.dll")]
         public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongA", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hwnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool AdjustWindowRectEx(ref RECT lpRect, uint dwStyle, bool bMenu, uint dwExStyle);
 
         #region Window styles
         [Flags]
@@ -120,6 +153,44 @@ namespace NoFences.Win32
             int exStyle = (int)GetWindowLong(Handle, (int)GetWindowLongFields.GWL_EXSTYLE);
             exStyle |= (int)ExtendedWindowStyles.WS_EX_TOOLWINDOW;
             SetWindowLong(Handle, (int)GetWindowLongFields.GWL_EXSTYLE, (IntPtr)exStyle);
+        }
+
+        public static void SendToDesktopLayer(IntPtr Handle)
+        {
+            SetWindowPos(Handle, (IntPtr)HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+
+        public static void SetTitleBarHeight(IntPtr Handle, int height = 50)
+        {
+            // Change this value to modify the title bar height
+            DwmSetWindowAttribute(Handle, DWMWA_CAPTION_HEIGHT, ref height, sizeof(int));
+        }
+
+        private const int GWL_STYLE = -16;
+        private const uint WS_OVERLAPPED = 0x00000000;
+        private const uint WS_CAPTION = 0x00C00000;
+        private const uint WS_SYSMENU = 0x00080000;
+        private const uint WS_THICKFRAME = 0x00040000;
+        private const uint WS_MINIMIZEBOX = 0x00020000;
+        private const uint WS_MAXIMIZEBOX = 0x00010000;
+        private const uint WS_SIZEBOX = WS_THICKFRAME;
+        public const int HT_CAPTION = 0x2;
+
+        public static void SetBorderColor(IntPtr Handle, int height = 4)
+        {
+            // Get the current window rectangle
+            RECT rect;
+            GetWindowRect(Handle, out rect);
+
+            // Adjust the window rectangle to include the custom title bar height
+            RECT adjustedRect = new RECT { Left = rect.Left, Top = rect.Top, Right = rect.Right, Bottom = rect.Bottom };
+            AdjustWindowRectEx(ref adjustedRect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, false, 0);
+
+            // Calculate the new height
+            int newHeight = rect.Bottom - rect.Top - (adjustedRect.Bottom - adjustedRect.Top) + height;
+
+            // Set the new window size
+            SetWindowPos(Handle, IntPtr.Zero, rect.Left, rect.Top, rect.Right - rect.Left, newHeight, 0);
         }
     }
 }

@@ -41,10 +41,12 @@ namespace NoFences.Win32
         [DllImport("user32.dll")]
         public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
 
-        public static void EnableBlur(IntPtr hwnd)
+        public static void EnableBlur(IntPtr hwnd, int blurOpacity = 150)
         {
-            var accent = new AccentPolicy();
-            accent.AccentState = AccentState.ACCENT_ENABLE_BLURBEHIND;
+            var accent = new AccentPolicy
+            {
+                AccentState = AccentState.ACCENT_ENABLE_BLURBEHIND,
+            };
 
             var accentStructSize = Marshal.SizeOf(accent);
 

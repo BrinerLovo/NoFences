@@ -1,8 +1,9 @@
 ﻿using NoFences.Model;
+using NoFences.Win32;
 using System;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
-using NoFences.Win32;
 
 namespace NoFences
 {
@@ -34,5 +35,9 @@ namespace NoFences
             }
         }
 
+        public static string GetAppVersion()
+        {
+            return Assembly.GetExecutingAssembly().GetName().Version.ToString();
+        }
     }
 }

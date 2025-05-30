@@ -13,6 +13,21 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>x64</PlatformTarget>
@@ -53,11 +68,21 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Control\ModernMenuRenderer.cs" />
     <Compile Include="EditDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="EditDialog.Designer.cs">
       <DependentUpon>EditDialog.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FenceWindow.Draw.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FenceWindow.Items.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FenceWindow.Settings.cs">
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="HeightDialog.cs">
       <SubType>Form</SubType>
@@ -65,6 +90,7 @@
     <Compile Include="HeightDialog.Designer.cs">
       <DependentUpon>HeightDialog.cs</DependentUpon>
     </Compile>
+    <Compile Include="Misc\Fader.cs" />
     <Compile Include="Model\EntryType.cs" />
     <Compile Include="Model\FenceEntry.cs" />
     <Compile Include="Model\FenceInfo.cs" />
@@ -77,16 +103,32 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SettingsWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SettingsWindow.Designer.cs">
+      <DependentUpon>SettingsWindow.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Util\AppSettings.cs" />
     <Compile Include="Util\Extensions.cs" />
+    <Compile Include="Util\MathUtils.cs" />
+    <Compile Include="Util\StartupManager.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
     <Compile Include="Win32\BlurUtil.cs" />
+    <Compile Include="Win32\CustomContextMenu.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Win32\DesktopUtil.cs" />
     <Compile Include="Win32\DropShadow.cs" />
     <Compile Include="Win32\IconUtil.cs" />
     <Compile Include="Win32\ShellContextMenu.cs" />
+    <Compile Include="Win32\ShellIcon.cs" />
     <Compile Include="Win32\WindowUtil.cs" />
     <EmbeddedResource Include="EditDialog.cs.resx">
+      <DependentUpon>EditDialog.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="EditDialog.en.resx">
       <DependentUpon>EditDialog.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="EditDialog.resx">
@@ -97,6 +139,9 @@
       <DependentUpon>EditDialog.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="FenceWindow.cs.resx">
+      <DependentUpon>FenceWindow.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FenceWindow.en.resx">
       <DependentUpon>FenceWindow.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="FenceWindow.resx">
@@ -124,6 +169,9 @@
       <DependentUpon>Resources.resx</DependentUpon>
       <DesignTime>True</DesignTime>
     </Compile>
+    <EmbeddedResource Include="SettingsWindow.resx">
+      <DependentUpon>SettingsWindow.cs</DependentUpon>
+    </EmbeddedResource>
     <None Include="app.manifest" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
@@ -137,6 +185,18 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.8">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4.8 %28x86 and x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

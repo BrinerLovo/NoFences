@@ -29,6 +29,8 @@ namespace NoFences.Model
 
         public bool Locked { get; set; }
 
+        public bool Folded { get; set; }
+
         public bool CanMinify { get; set; }
 
         /// <summary>

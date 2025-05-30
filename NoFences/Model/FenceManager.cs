@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
 
@@ -12,6 +13,8 @@ namespace NoFences.Model
 
         private readonly string basePath;
 
+        public List<FenceWindow> Fences { get; } = new List<FenceWindow>();
+
         public FenceManager()
         {
             basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoFences");
@@ -23,13 +26,30 @@ namespace NoFences.Model
             foreach (var dir in Directory.EnumerateDirectories(basePath))
             {
                 var metaFile = Path.Combine(dir, MetaFileName);
+
+                // check if the meta file exists
+                if (!File.Exists(metaFile))
+                    continue;
+
                 var serializer = new XmlSerializer(typeof(FenceInfo));
                 var reader = new StreamReader(metaFile);
                 var fence = serializer.Deserialize(reader) as FenceInfo;
                 reader.Close();
 
-                new FenceWindow(fence).Show();
+                var instance = new FenceWindow(fence);
+                Fences.Add(instance);
+                instance.Show();
             }
+        }
+
+        public void AddNewFence(FenceWindow fence)
+        {
+            Fences.Add(fence);
+        }
+
+        public void RemoveFence(FenceWindow fence)
+        {
+            Fences.Remove(fence);
         }
 
         public void CreateFence(string name)
@@ -47,9 +67,10 @@ namespace NoFences.Model
             new FenceWindow(fenceInfo).Show();
         }
 
-        public void RemoveFence(FenceInfo info)
+        public void RemoveFence(FenceInfo info, FenceWindow window)
         {
             Directory.Delete(GetFolderPath(info), true);
+            RemoveFence(window);
         }
 
         public void UpdateFence(FenceInfo fenceInfo)

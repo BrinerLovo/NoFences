@@ -19,7 +19,7 @@ namespace NoFences.Util
             ".jpeg",
             ".png",
             ".tiff",
-            ".tif"
+            ".tif",
         };
 
         private class ThumbnailState
@@ -31,6 +31,7 @@ namespace NoFences.Util
         private readonly SemaphoreSlim semaphore = new SemaphoreSlim(4);
         private readonly IDictionary<string, ThumbnailState> iconCache = new Dictionary<string, ThumbnailState>();
         public event EventHandler IconThumbnailLoaded;
+        private const int MAX_THUMBNAIL_SIZE = 32;
 
         public bool IsSupported(string path)
         {
@@ -61,16 +62,34 @@ namespace NoFences.Util
                 {
                     using (var img = Image.FromStream(ms))
                     {
-                        var thumb = (Bitmap)img.GetThumbnailImage(32, 32, () => false, IntPtr.Zero);
-                        var icon = Icon.FromHandle(thumb.GetHicon());
-                        state.icon = icon;
-                        IconThumbnailLoaded(this, new EventArgs());
-                        semaphore.Release();
-                        return icon;
+                        // Compute scaled size while keeping aspect ratio
+                        Size scaledSize = GetScaledSize(img.Width, img.Height, MAX_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE);
+
+                        using (Bitmap canvas = new Bitmap(MAX_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE)) // Create a 32x32 canvas
+                        using (Graphics g = Graphics.FromImage(canvas))
+                        {
+                            g.Clear(Color.Transparent); // Make background transparent
+                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            g.DrawImage(img, (MAX_THUMBNAIL_SIZE - scaledSize.Width) / 2, (MAX_THUMBNAIL_SIZE - scaledSize.Height) / 2, scaledSize.Width, scaledSize.Height);
+
+                            var icon = Icon.FromHandle(canvas.GetHicon());
+                            state.icon = icon;
+                        }
                     }
                 }
+                IconThumbnailLoaded?.Invoke(this, new EventArgs());
+                semaphore.Release();
             });
+
             return state;
+        }
+
+        public static Size GetScaledSize(int originalWidth, int originalHeight, int maxWidth, int maxHeight)
+        {
+            float ratio = Math.Min((float)maxWidth / originalWidth, (float)maxHeight / originalHeight);
+            int newWidth = (int)(originalWidth * ratio);
+            int newHeight = (int)(originalHeight * ratio);
+            return new Size(newWidth, newHeight);
         }
 
     }

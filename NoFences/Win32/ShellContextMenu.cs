@@ -1,10 +1,10 @@
 using System;
-using System.Text;
-using System.Runtime.InteropServices;
 using System.Drawing;
-using System.Windows.Forms;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace Peter
 {
@@ -1165,7 +1165,7 @@ namespace Peter
             Int32 ParseDisplayName(
                 IntPtr hwnd,
                 IntPtr pbc,
-                [MarshalAs(UnmanagedType.LPWStr)] 
+                [MarshalAs(UnmanagedType.LPWStr)]
             string pszDisplayName,
                 ref uint pchEaten,
                 out IntPtr ppidl,
@@ -1260,7 +1260,7 @@ namespace Peter
             Int32 SetNameOf(
                 IntPtr hwnd,
                 IntPtr pidl,
-                [MarshalAs(UnmanagedType.LPWStr)] 
+                [MarshalAs(UnmanagedType.LPWStr)]
             string pszName,
                 SHGNO uFlags,
                 out IntPtr ppidlOut);
@@ -1520,7 +1520,6 @@ namespace Peter
         }
         // ************************************************************************
 
-
         #region Win32 Imports
         // ************************************************************************
         // Win32: SetWindowsHookEx()
@@ -1560,10 +1559,8 @@ namespace Peter
         /// <returns>The unsigned integer for the High Word</returns>
         public static uint HiWord(IntPtr ptr)
         {
-            if (((uint)ptr & 0x80000000) == 0x80000000)
-                return ((uint)ptr >> 16);
-            else
-                return ((uint)ptr >> 16) & 0xffff;
+            long value = ptr.ToInt64();
+            return (uint)((value >> 16) & 0xffff);
         }
 
         /// <summary>
@@ -1573,7 +1570,7 @@ namespace Peter
         /// <returns>The unsigned integer for the Low Word</returns>
         public static uint LoWord(IntPtr ptr)
         {
-            return (uint)ptr & 0xffff;
+            return (uint)(ptr.ToInt64() & 0xFFFF);
         }
 
         #endregion
