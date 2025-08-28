@@ -54,7 +54,25 @@ namespace NoFences
                 Height = titleHeight;
             }
 
+            // Reinitialize file watchers in case watched extensions changed
+            ReinitializeFileWatchers();
+
             Refresh();
+        }
+
+        /// <summary>
+        /// Reinitializes the file watchers with current watched extensions settings
+        /// </summary>
+        public void ReinitializeFileWatchers()
+        {
+            // Dispose existing watchers
+            fenceWatcher?.Dispose();
+            desktopWatcher?.Dispose();
+            fenceWatcher = null;
+            desktopWatcher = null;
+
+            // Reinitialize with current settings
+            InitFileWatchers();
         }
 
         private void settingsMenuItem_Click(object sender, EventArgs e)
@@ -89,79 +107,147 @@ namespace NoFences
             Save();
         }
 
-        // We do not use this anymore, we use a global setting for this.
-        private void titleSizeToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            var dialog = new HeightDialog(fenceInfo.TitleHeight);
-            if (dialog.ShowDialog(this) == DialogResult.OK)
-            {
-                fenceInfo.TitleHeight = dialog.TitleHeight;
-                logicalTitleHeight = dialog.TitleHeight;
-                titleHeight = LogicalToDeviceUnits(logicalTitleHeight);
-                ReloadFonts();
-                Minify();
-                if (IsMinified)
-                {
-                    Height = titleHeight;
-                }
-                Refresh();
-                Save();
-            }
-        }
-
         private void minifyToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (IsMinified)
-            {
-                Height = fenceInfo.Height;
-                state = FenceState.Normal;
-            }
             fenceInfo.CanMinify = minifyToolStripMenuItem.Checked;
             Save();
-
         }
 
-        private void deleteItemToolStripMenuItem_Click(object sender, EventArgs e)
+        private void watchedExtensionsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            RemoveSelectedItem();
-        }
-
-        private void contextMenuStrip1_Opening(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            deleteItemToolStripMenuItem.Visible = hoveringItem != null;
-        }
-
-        private void exitToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            if (MessageBox.Show(this, "Really remove this fence?", "Remove", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            using (var dialog = new WatchedExtensionsDialog(fenceInfo.WatchedExtensions))
             {
-                FenceManager.Instance.RemoveFence(fenceInfo, this);
-                Close();
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    fenceInfo.WatchedExtensions = dialog.WatchedExtensions;
+                    Save();
+                    ReinitializeFileWatchers();
+                }
             }
         }
 
-        private void closeAppMenuItem_Click(object sender, EventArgs e)
+        private void customFolderPathToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // close the application
-            Application.Exit();
+            using (var folderDialog = new FolderBrowserDialog())
+            {
+                folderDialog.Description = "Select custom folder path for this fence";
+                folderDialog.ShowNewFolderButton = true;
+                
+                // Set current path if it exists
+                if (!string.IsNullOrEmpty(fenceInfo.CustomFolderPath) && System.IO.Directory.Exists(fenceInfo.CustomFolderPath))
+                {
+                    folderDialog.SelectedPath = fenceInfo.CustomFolderPath;
+                }
+                
+                if (folderDialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    string oldPath = fenceFolderPath;
+                    fenceInfo.CustomFolderPath = folderDialog.SelectedPath;
+                    
+                    // Ask user if they want to move existing files to the new location
+                    if (System.IO.Directory.Exists(oldPath) && System.IO.Directory.GetFiles(oldPath).Length > 0)
+                    {
+                        var result = MessageBox.Show(
+                            "Would you like to move existing files from the old location to the new folder?",
+                            "Move Files",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Question);
+                            
+                        if (result == DialogResult.Yes)
+                        {
+                            MoveFilesToNewLocation(oldPath, fenceFolderPath);
+                        }
+                    }
+                    
+                    Save();
+                    ReinitializeFileWatchers();
+                    Refresh();
+                }
+            }
         }
 
-        private bool IsNearLeftEdge(Point location)
+        private void clearCustomFolderPathToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            int edgeThreshold = 5; // Pixels from the edge to start resizing
-            return location.X <= edgeThreshold;
+            if (!string.IsNullOrEmpty(fenceInfo.CustomFolderPath))
+            {
+                var result = MessageBox.Show(
+                    "This will reset the fence to use the default folder location. Continue?",
+                    "Reset Folder Path",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                    
+                if (result == DialogResult.Yes)
+                {
+                    string oldPath = fenceFolderPath;
+                    fenceInfo.CustomFolderPath = null;
+                    
+                    // Ask if they want to move files to the default location
+                    if (System.IO.Directory.Exists(oldPath) && System.IO.Directory.GetFiles(oldPath).Length > 0)
+                    {
+                        var moveResult = MessageBox.Show(
+                            "Would you like to move existing files to the default location?",
+                            "Move Files",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Question);
+                            
+                        if (moveResult == DialogResult.Yes)
+                        {
+                            MoveFilesToNewLocation(oldPath, fenceFolderPath);
+                        }
+                    }
+                    
+                    Save();
+                    ReinitializeFileWatchers();
+                    Refresh();
+                }
+            }
         }
 
-        private bool IsNearRightEdge(Point location)
+        private void MoveFilesToNewLocation(string sourcePath, string destinationPath)
         {
-            int edgeThreshold = 5;
-            return location.X >= this.ClientSize.Width - edgeThreshold;
+            try
+            {
+                // Ensure destination directory exists
+                if (!System.IO.Directory.Exists(destinationPath))
+                {
+                    System.IO.Directory.CreateDirectory(destinationPath);
+                }
+
+                // Move all files from source to destination
+                foreach (string file in System.IO.Directory.GetFiles(sourcePath))
+                {
+                    string fileName = System.IO.Path.GetFileName(file);
+                    string destFile = System.IO.Path.Combine(destinationPath, fileName);
+                    
+                    // Handle duplicates
+                    int counter = 1;
+                    string originalDestFile = destFile;
+                    while (System.IO.File.Exists(destFile))
+                    {
+                        string nameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(originalDestFile);
+                        string ext = System.IO.Path.GetExtension(originalDestFile);
+                        destFile = System.IO.Path.Combine(destinationPath, $"{nameWithoutExt}_{counter}{ext}");
+                        counter++;
+                    }
+                    
+                    System.IO.File.Move(file, destFile);
+                    
+                    // Update the file path in our fence list
+                    int index = fenceInfo.Files.IndexOf(file);
+                    if (index >= 0)
+                    {
+                        fenceInfo.Files[index] = destFile;
+                    }
+                }
+                
+                Console.WriteLine($"Successfully moved files from {sourcePath} to {destinationPath}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error moving files: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        private bool IsNearBottomEdge(Point location)
-        {
-            int edgeThreshold = 5;
-            return location.Y >= this.ClientSize.Height - edgeThreshold;
-        }
+        // ...existing code...
     }
 }

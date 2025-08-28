@@ -69,13 +69,24 @@ namespace NoFences.Model
 
         public void RemoveFence(FenceInfo info, FenceWindow window)
         {
-            Directory.Delete(GetFolderPath(info), true);
+            // Use the window's fenceFolderPath property to get the correct path
+            string folderPath = !string.IsNullOrEmpty(info.CustomFolderPath) 
+                ? info.CustomFolderPath 
+                : Path.Combine(basePath, info.Id.ToString());
+                
+            if (Directory.Exists(folderPath))
+            {
+                Directory.Delete(folderPath, true);
+            }
             RemoveFence(window);
         }
 
         public void UpdateFence(FenceInfo fenceInfo)
         {
-            var path = GetFolderPath(fenceInfo);
+            // Use custom folder path if specified, otherwise use default
+            string path = !string.IsNullOrEmpty(fenceInfo.CustomFolderPath) 
+                ? fenceInfo.CustomFolderPath 
+                : Path.Combine(basePath, fenceInfo.Id.ToString());
             EnsureDirectoryExists(path);
 
             var metaFile = Path.Combine(path, MetaFileName);
@@ -94,7 +105,10 @@ namespace NoFences.Model
 
         private string GetFolderPath(FenceInfo fenceInfo)
         {
-            return Path.Combine(basePath, fenceInfo.Id.ToString());
+            // Use custom folder path if specified, otherwise use default
+            return !string.IsNullOrEmpty(fenceInfo.CustomFolderPath) 
+                ? fenceInfo.CustomFolderPath 
+                : Path.Combine(basePath, fenceInfo.Id.ToString());
         }
     }
 }

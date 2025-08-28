@@ -35,6 +35,9 @@
             this.lockedToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.minifyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.renameToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.watchedExtensionsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.customFolderPathToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.clearCustomFolderPathToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.settingsMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.newFenceToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -43,6 +46,9 @@
             this.appContextMenuDark = new NoFences.Win32.CustomContextMenu();
             this.lockedTick = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
+            this.watchedExtensionsToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
+            this.customFolderPathToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
+            this.clearCustomFolderPathToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem5 = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.toolStripMenuItem3 = new System.Windows.Forms.ToolStripMenuItem();
@@ -58,6 +64,9 @@
             this.lockedToolStripMenuItem,
             this.minifyToolStripMenuItem,
             this.renameToolStripMenuItem,
+            this.watchedExtensionsToolStripMenuItem,
+            this.customFolderPathToolStripMenuItem,
+            this.clearCustomFolderPathToolStripMenuItem,
             this.settingsMenuItem,
             this.toolStripSeparator1,
             this.newFenceToolStripMenuItem,
@@ -94,6 +103,27 @@
             resources.ApplyResources(this.renameToolStripMenuItem, "renameToolStripMenuItem");
             this.renameToolStripMenuItem.Click += new System.EventHandler(this.renameToolStripMenuItem_Click);
             // 
+            // watchedExtensionsToolStripMenuItem
+            // 
+            this.watchedExtensionsToolStripMenuItem.Name = "watchedExtensionsToolStripMenuItem";
+            this.watchedExtensionsToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.watchedExtensionsToolStripMenuItem.Text = "Watched Extensions...";
+            this.watchedExtensionsToolStripMenuItem.Click += new System.EventHandler(this.watchedExtensionsToolStripMenuItem_Click);
+            // 
+            // customFolderPathToolStripMenuItem
+            // 
+            this.customFolderPathToolStripMenuItem.Name = "customFolderPathToolStripMenuItem";
+            this.customFolderPathToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.customFolderPathToolStripMenuItem.Text = "Set Custom Folder...";
+            this.customFolderPathToolStripMenuItem.Click += new System.EventHandler(this.customFolderPathToolStripMenuItem_Click);
+            // 
+            // clearCustomFolderPathToolStripMenuItem
+            // 
+            this.clearCustomFolderPathToolStripMenuItem.Name = "clearCustomFolderPathToolStripMenuItem";
+            this.clearCustomFolderPathToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.clearCustomFolderPathToolStripMenuItem.Text = "Use Default Folder";
+            this.clearCustomFolderPathToolStripMenuItem.Click += new System.EventHandler(this.clearCustomFolderPathToolStripMenuItem_Click);
+            // 
             // settingsMenuItem
             // 
             this.settingsMenuItem.Name = "settingsMenuItem";
@@ -128,6 +158,9 @@
             this.appContextMenuDark.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.lockedTick,
             this.toolStripMenuItem2,
+            this.watchedExtensionsToolStripMenuItemDark,
+            this.customFolderPathToolStripMenuItemDark,
+            this.clearCustomFolderPathToolStripMenuItemDark,
             this.toolStripMenuItem5,
             this.toolStripSeparator2,
             this.toolStripMenuItem3,
@@ -146,6 +179,27 @@
             this.toolStripMenuItem2.Name = "toolStripMenuItem2";
             resources.ApplyResources(this.toolStripMenuItem2, "toolStripMenuItem2");
             this.toolStripMenuItem2.Click += new System.EventHandler(this.renameToolStripMenuItem_Click);
+            // 
+            // watchedExtensionsToolStripMenuItemDark
+            // 
+            this.watchedExtensionsToolStripMenuItemDark.Name = "watchedExtensionsToolStripMenuItemDark";
+            this.watchedExtensionsToolStripMenuItemDark.Size = new System.Drawing.Size(180, 22);
+            this.watchedExtensionsToolStripMenuItemDark.Text = "Watched Extensions...";
+            this.watchedExtensionsToolStripMenuItemDark.Click += new System.EventHandler(this.watchedExtensionsToolStripMenuItem_Click);
+            // 
+            // customFolderPathToolStripMenuItemDark
+            // 
+            this.customFolderPathToolStripMenuItemDark.Name = "customFolderPathToolStripMenuItemDark";
+            this.customFolderPathToolStripMenuItemDark.Size = new System.Drawing.Size(180, 22);
+            this.customFolderPathToolStripMenuItemDark.Text = "Set Custom Folder...";
+            this.customFolderPathToolStripMenuItemDark.Click += new System.EventHandler(this.customFolderPathToolStripMenuItem_Click);
+            // 
+            // clearCustomFolderPathToolStripMenuItemDark
+            // 
+            this.clearCustomFolderPathToolStripMenuItemDark.Name = "clearCustomFolderPathToolStripMenuItemDark";
+            this.clearCustomFolderPathToolStripMenuItemDark.Size = new System.Drawing.Size(180, 22);
+            this.clearCustomFolderPathToolStripMenuItemDark.Text = "Use Default Folder";
+            this.clearCustomFolderPathToolStripMenuItemDark.Click += new System.EventHandler(this.clearCustomFolderPathToolStripMenuItem_Click);
             // 
             // toolStripMenuItem5
             // 
@@ -216,9 +270,15 @@
         private System.Windows.Forms.ToolStripMenuItem newFenceToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem settingsMenuItem;
         private System.Windows.Forms.ToolStripMenuItem closeAppMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem watchedExtensionsToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem customFolderPathToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem clearCustomFolderPathToolStripMenuItem;
         private Win32.CustomContextMenu appContextMenuDark;
         private System.Windows.Forms.ToolStripMenuItem lockedTick;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
+        private System.Windows.Forms.ToolStripMenuItem watchedExtensionsToolStripMenuItemDark;
+        private System.Windows.Forms.ToolStripMenuItem customFolderPathToolStripMenuItemDark;
+        private System.Windows.Forms.ToolStripMenuItem clearCustomFolderPathToolStripMenuItemDark;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem3;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem4;

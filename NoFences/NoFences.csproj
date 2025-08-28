@@ -115,6 +115,12 @@
     <Compile Include="Util\StartupManager.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
+    <Compile Include="WatchedExtensionsDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="WatchedExtensionsDialog.Designer.cs">
+      <DependentUpon>WatchedExtensionsDialog.cs</DependentUpon>
+    </Compile>
     <Compile Include="Win32\BlurUtil.cs" />
     <Compile Include="Win32\CustomContextMenu.cs">
       <SubType>Component</SubType>

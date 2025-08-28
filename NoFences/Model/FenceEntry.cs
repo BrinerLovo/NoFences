@@ -28,7 +28,11 @@ namespace NoFences.Model
                 return new FenceEntry(path, EntryType.File);
             else if (Directory.Exists(path))
                 return new FenceEntry(path, EntryType.Folder);
-            else return null;
+            else 
+            {
+                Console.WriteLine($"FenceEntry.FromPath: Path does not exist: {path}");
+                return null;
+            }
         }
 
         public Icon ExtractIcon(ThumbnailProvider thumbnailProvider)

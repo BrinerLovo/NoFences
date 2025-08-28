@@ -13,8 +13,13 @@ namespace NoFences
 
         private void RemoveSelectedItem()
         {
+            Console.WriteLine($"RemoveSelectedItem called for item: {hoveringItem}");
+            Console.WriteLine($"Files before removal: {string.Join(", ", fenceInfo.Files)}");
+            
             fenceInfo.Files.RemoveAll(x => x == hoveringItem);
             hoveringItem = null;
+            
+            Console.WriteLine($"Files after removal: {string.Join(", ", fenceInfo.Files)}");
             Save();
             Refresh();
         }

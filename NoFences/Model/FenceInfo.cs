@@ -40,6 +40,19 @@ namespace NoFences.Model
 
         public List<string> Files { get; set; } = new List<string>();
 
+        /// <summary>
+        /// Gets or sets the list of file extensions to watch for automatic addition.
+        /// When files with these extensions are created on the desktop, they will be automatically 
+        /// moved to this fence's folder. Leave empty to disable watching.
+        /// </summary>
+        public List<string> WatchedExtensions { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Gets or sets the custom folder path for this fence. 
+        /// If null or empty, the default path will be used (LocalApplicationData/NoFences/{Id}).
+        /// </summary>
+        public string CustomFolderPath { get; set; }
+
         public FenceInfo()
         {
 

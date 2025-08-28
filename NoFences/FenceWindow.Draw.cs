@@ -67,7 +67,11 @@ namespace NoFences
             {
                 index++;
                 var entry = FenceEntry.FromPath(file);
-                if (entry == null) continue;
+                if (entry == null) 
+                {
+                    Console.WriteLine($"Skipping file due to null entry: {file}");
+                    continue;
+                }
 
                 RenderEntry(g, entry, x, y + titleHeight - scrollOffset, index);
 
@@ -156,16 +160,6 @@ namespace NoFences
                 {
                     shouldRunDoubleClick = false;
                     entry.Open();
-                }
-
-                if (mouseOver && MouseButtons == MouseButtons.Left)
-                {
-                    if (Math.Abs(mousePos.X - x) > 8 || Math.Abs(mousePos.Y - y) > 8) // Prevent accidental drag
-                    {
-                        draggedItemIndex = index;
-                        draggedItem = selectedItem;
-                        DoDragDrop(entry.Path, DragDropEffects.Move);
-                    }
                 }
 
                 if (selectedItem == entry.Path)
