@@ -36,6 +36,7 @@
             this.minifyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.renameToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.watchedExtensionsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.scanForWatchedItemsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.customFolderPathToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.clearCustomFolderPathToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.settingsMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -47,6 +48,7 @@
             this.lockedTick = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
             this.watchedExtensionsToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
+            this.scanForWatchedItemsToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
             this.customFolderPathToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
             this.clearCustomFolderPathToolStripMenuItemDark = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem5 = new System.Windows.Forms.ToolStripMenuItem();
@@ -65,6 +67,7 @@
             this.minifyToolStripMenuItem,
             this.renameToolStripMenuItem,
             this.watchedExtensionsToolStripMenuItem,
+            this.scanForWatchedItemsToolStripMenuItem,
             this.customFolderPathToolStripMenuItem,
             this.clearCustomFolderPathToolStripMenuItem,
             this.settingsMenuItem,
@@ -109,6 +112,13 @@
             this.watchedExtensionsToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.watchedExtensionsToolStripMenuItem.Text = "Watched Extensions...";
             this.watchedExtensionsToolStripMenuItem.Click += new System.EventHandler(this.watchedExtensionsToolStripMenuItem_Click);
+            // 
+            // scanForWatchedItemsToolStripMenuItem
+            // 
+            this.scanForWatchedItemsToolStripMenuItem.Name = "scanForWatchedItemsToolStripMenuItem";
+            this.scanForWatchedItemsToolStripMenuItem.Size = new System.Drawing.Size(200, 22);
+            this.scanForWatchedItemsToolStripMenuItem.Text = "Scan for Watched Items";
+            this.scanForWatchedItemsToolStripMenuItem.Click += new System.EventHandler(this.scanForWatchedItemsToolStripMenuItem_Click);
             // 
             // customFolderPathToolStripMenuItem
             // 
@@ -159,6 +169,7 @@
             this.lockedTick,
             this.toolStripMenuItem2,
             this.watchedExtensionsToolStripMenuItemDark,
+            this.scanForWatchedItemsToolStripMenuItemDark,
             this.customFolderPathToolStripMenuItemDark,
             this.clearCustomFolderPathToolStripMenuItemDark,
             this.toolStripMenuItem5,
@@ -186,6 +197,13 @@
             this.watchedExtensionsToolStripMenuItemDark.Size = new System.Drawing.Size(180, 22);
             this.watchedExtensionsToolStripMenuItemDark.Text = "Watched Extensions...";
             this.watchedExtensionsToolStripMenuItemDark.Click += new System.EventHandler(this.watchedExtensionsToolStripMenuItem_Click);
+            // 
+            // scanForWatchedItemsToolStripMenuItemDark
+            // 
+            this.scanForWatchedItemsToolStripMenuItemDark.Name = "scanForWatchedItemsToolStripMenuItemDark";
+            this.scanForWatchedItemsToolStripMenuItemDark.Size = new System.Drawing.Size(200, 22);
+            this.scanForWatchedItemsToolStripMenuItemDark.Text = "Scan for Watched Items";
+            this.scanForWatchedItemsToolStripMenuItemDark.Click += new System.EventHandler(this.scanForWatchedItemsToolStripMenuItem_Click);
             // 
             // customFolderPathToolStripMenuItemDark
             // 
@@ -271,12 +289,14 @@
         private System.Windows.Forms.ToolStripMenuItem settingsMenuItem;
         private System.Windows.Forms.ToolStripMenuItem closeAppMenuItem;
         private System.Windows.Forms.ToolStripMenuItem watchedExtensionsToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem scanForWatchedItemsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem customFolderPathToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem clearCustomFolderPathToolStripMenuItem;
         private Win32.CustomContextMenu appContextMenuDark;
         private System.Windows.Forms.ToolStripMenuItem lockedTick;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
         private System.Windows.Forms.ToolStripMenuItem watchedExtensionsToolStripMenuItemDark;
+        private System.Windows.Forms.ToolStripMenuItem scanForWatchedItemsToolStripMenuItemDark;
         private System.Windows.Forms.ToolStripMenuItem customFolderPathToolStripMenuItemDark;
         private System.Windows.Forms.ToolStripMenuItem clearCustomFolderPathToolStripMenuItemDark;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;

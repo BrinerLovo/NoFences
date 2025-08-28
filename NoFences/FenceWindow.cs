@@ -195,9 +195,12 @@ namespace NoFences
         {
             try
             {
-                // Check if the file extension is in our watched list
+                // Check if the file extension is in our watched list OR if it's a folder
                 string extension = Path.GetExtension(path);
-                if (fenceInfo.WatchedExtensions == null || !fenceInfo.WatchedExtensions.Contains(extension))
+                bool isWatchedFile = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(extension);
+                bool isFolder = Directory.Exists(path);
+                
+                if (!isWatchedFile && !isFolder)
                     return;
 
                 Console.WriteLine($"Fence folder changed: {path}");
@@ -207,30 +210,51 @@ namespace NoFences
                 {
                     try
                     {
-                        // Remove missing files, add new ones
+                        // Remove missing files and folders, add new ones
                         var files = new List<string>();
-                        foreach (var watchedExt in fenceInfo.WatchedExtensions)
+                        var folders = new List<string>();
+                        
+                        // Get watched files
+                        if (fenceInfo.WatchedExtensions != null)
                         {
-                            if (Directory.Exists(fenceFolderPath))
+                            foreach (var watchedExt in fenceInfo.WatchedExtensions)
                             {
-                                files.AddRange(Directory.GetFiles(fenceFolderPath, "*" + watchedExt));
+                                if (Directory.Exists(fenceFolderPath))
+                                {
+                                    files.AddRange(Directory.GetFiles(fenceFolderPath, "*" + watchedExt));
+                                }
                             }
+                        }
+                        
+                        // Get folders
+                        if (Directory.Exists(fenceFolderPath))
+                        {
+                            folders.AddRange(Directory.GetDirectories(fenceFolderPath));
                         }
 
                         // Only remove files that are watched extensions and don't exist
                         // Don't remove files that aren't watched extensions
                         var filesToRemove = fenceInfo.Files.Where(f => 
                         {
-                            string fileExt = Path.GetExtension(f);
-                            return fenceInfo.WatchedExtensions.Contains(fileExt) && !File.Exists(f);
+                            if (File.Exists(f))
+                            {
+                                string fileExt = Path.GetExtension(f);
+                                return fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(fileExt) && !File.Exists(f);
+                            }
+                            else if (Directory.Exists(f))
+                            {
+                                return !Directory.Exists(f); // Remove folders that don't exist
+                            }
+                            return !File.Exists(f) && !Directory.Exists(f); // Remove if neither file nor folder exists
                         }).ToList();
 
                         foreach (var fileToRemove in filesToRemove)
                         {
-                            Console.WriteLine($"Removing missing watched file: {fileToRemove}");
+                            Console.WriteLine($"Removing missing watched item: {fileToRemove}");
                             fenceInfo.Files.Remove(fileToRemove);
                         }
 
+                        // Add new files
                         foreach (var file in files)
                         {
                             if (!fenceInfo.Files.Contains(file))
@@ -239,6 +263,17 @@ namespace NoFences
                                 fenceInfo.Files.Add(file);
                             }
                         }
+
+                        // Add new folders
+                        foreach (var folder in folders)
+                        {
+                            if (!fenceInfo.Files.Contains(folder))
+                            {
+                                Console.WriteLine($"Adding folder: {folder}");
+                                fenceInfo.Files.Add(folder);
+                            }
+                        }
+                        
                         Save();
                         Refresh();
                     }
@@ -258,17 +293,20 @@ namespace NoFences
         {
             try
             {
-                // Check if the file extension is in our watched list
+                // Check if the file extension is in our watched list OR if it's a folder
                 string extension = Path.GetExtension(path);
-                if (fenceInfo.WatchedExtensions == null || !fenceInfo.WatchedExtensions.Contains(extension))
+                bool isWatchedFile = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(extension);
+                bool isFolder = Directory.Exists(path);
+                
+                if (!isWatchedFile && !isFolder)
                     return;
 
-                // Only move if file has a watched extension and doesn't already exist in the fence
+                // Only move if file has a watched extension or is a folder and doesn't already exist in the fence
                 this.BeginInvoke((Action)(() =>
                 {
                     try
                     {
-                        if (!fenceInfo.Files.Contains(path) && File.Exists(path))
+                        if (!fenceInfo.Files.Contains(path) && (File.Exists(path) || Directory.Exists(path)))
                         {
                             // Ensure the fence folder exists
                             if (!Directory.Exists(fenceFolderPath))
@@ -276,30 +314,49 @@ namespace NoFences
                                 Directory.CreateDirectory(fenceFolderPath);
                             }
 
-                            string destPath = Path.Combine(fenceFolderPath, Path.GetFileName(path));
+                            string itemName = Path.GetFileName(path);
+                            string destPath = Path.Combine(fenceFolderPath, itemName);
 
-                            // Make sure we don't overwrite an existing file
+                            // Make sure we don't overwrite an existing file/folder
                             int counter = 1;
                             string originalDestPath = destPath;
-                            while (File.Exists(destPath))
+                            while (File.Exists(destPath) || Directory.Exists(destPath))
                             {
-                                string nameWithoutExt = Path.GetFileNameWithoutExtension(originalDestPath);
-                                string ext = Path.GetExtension(originalDestPath);
-                                string dir = Path.GetDirectoryName(originalDestPath);
-                                destPath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
+                                if (File.Exists(path))
+                                {
+                                    string nameWithoutExt = Path.GetFileNameWithoutExtension(originalDestPath);
+                                    string ext = Path.GetExtension(originalDestPath);
+                                    string dir = Path.GetDirectoryName(originalDestPath);
+                                    destPath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
+                                }
+                                else
+                                {
+                                    string dir = Path.GetDirectoryName(originalDestPath);
+                                    destPath = Path.Combine(dir, $"{itemName}_{counter}");
+                                }
                                 counter++;
                             }
 
-                            File.Move(path, destPath);
+                            // Move file or folder
+                            if (File.Exists(path))
+                            {
+                                File.Move(path, destPath);
+                                Console.WriteLine($"Auto-moved file from Desktop to fence: {path} → {destPath}");
+                            }
+                            else if (Directory.Exists(path))
+                            {
+                                Directory.Move(path, destPath);
+                                Console.WriteLine($"Auto-moved folder from Desktop to fence: {path} → {destPath}");
+                            }
+
                             fenceInfo.Files.Add(destPath);
                             Save();
                             Refresh();
-                            Console.WriteLine($"Auto-moved file from Desktop to fence: {path} → {destPath}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Failed to move file from Desktop: {ex.Message}");
+                        Console.WriteLine($"Failed to move item from Desktop: {ex.Message}");
                     }
                 }));
             }
@@ -450,21 +507,21 @@ namespace NoFences
             }
 
             string[] dropped = (string[])e.Data.GetData(DataFormats.FileDrop);
-            foreach (var file in dropped)
+            foreach (var item in dropped)
             {
-                if (!fenceInfo.Files.Contains(file) && ItemExists(file))
+                if (!fenceInfo.Files.Contains(item) && ItemExists(item))
                 {
                     if (Properties.Settings.Default.hide_desktop_icons)
                     {
-                        string filePath = HandleDraggedItem(file);
-                        fenceInfo.Files.Add(filePath);
+                        string itemPath = HandleDraggedItem(item);
+                        fenceInfo.Files.Add(itemPath);
+                        Console.WriteLine($"Added item to fence (moved to fence folder): {item} → {itemPath}");
                     }
                     else
                     {
-                        fenceInfo.Files.Add(file);
+                        fenceInfo.Files.Add(item);
+                        Console.WriteLine($"Added item to fence (referenced): {item}");
                     }
-                    
-                    Console.WriteLine($"Added file to fence: {file}"); // Debug logging
                 }
             }
 
@@ -554,7 +611,7 @@ namespace NoFences
             }
             else if (isResizing)
             {
-                // Calculate new size based on cursor position
+                // Calculator new size based on cursor position
                 int newWidth = resizeStartSize.Width;
                 int newHeight = resizeStartSize.Height;
                 int newX = this.Left;
@@ -934,7 +991,27 @@ namespace NoFences
         // Missing event handlers
         private void contextMenuStrip1_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Context menu opening logic if needed
+            // Update menu item states based on current fence configuration
+            bool hasWatchedExtensions = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Count > 0;
+            
+            // Enable/disable scan button based on whether we have watched extensions
+            if (sender == appContextMenu)
+            {
+                scanForWatchedItemsToolStripMenuItem.Enabled = hasWatchedExtensions;
+                scanForWatchedItemsToolStripMenuItem.ToolTipText = hasWatchedExtensions 
+                    ? "Scan desktop for files matching watched extensions" 
+                    : "Configure watched extensions first";
+            }
+            else if (sender == appContextMenuDark)
+            {
+                scanForWatchedItemsToolStripMenuItemDark.Enabled = hasWatchedExtensions;
+                scanForWatchedItemsToolStripMenuItemDark.ToolTipText = hasWatchedExtensions 
+                    ? "Scan desktop for files matching watched extensions" 
+                    : "Configure watched extensions first";
+            }
+            
+            // Sync locked state between menus
+            lockedTick.Checked = lockedToolStripMenuItem.Checked;
         }
 
         private void deleteItemToolStripMenuItem_Click(object sender, EventArgs e)
@@ -966,6 +1043,205 @@ namespace NoFences
                 RemoveSelectedItem();
                 e.Handled = true;
             }
+        }
+
+        private void scanForWatchedItemsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ScanForWatchedItems();
+        }
+
+        private void ScanForWatchedItems()
+        {
+            if (fenceInfo.WatchedExtensions == null || fenceInfo.WatchedExtensions.Count == 0)
+            {
+                MessageBox.Show("No file extensions are being watched. Please configure watched extensions first.", 
+                    "No Extensions Watched", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                var foundItems = new List<string>();
+                var desktopPaths = new List<string> { DesktopPath };
+                
+                // Also scan public desktop if different
+                if (!string.Equals(DesktopPath, PublicDesktopPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    desktopPaths.Add(PublicDesktopPath);
+                }
+                
+                foreach (var desktopPath in desktopPaths)
+                {
+                    if (!Directory.Exists(desktopPath))
+                        continue;
+                        
+                    // Scan for watched files
+                    foreach (var extension in fenceInfo.WatchedExtensions)
+                    {
+                        var files = Directory.GetFiles(desktopPath, "*" + extension);
+                        foreach (var file in files)
+                        {
+                            if (!fenceInfo.Files.Contains(file))
+                            {
+                                foundItems.Add(file);
+                            }
+                        }
+                    }
+
+                    // Scan for folders (always included when watching is enabled)
+                    var folders = Directory.GetDirectories(desktopPath);
+                    foreach (var folder in folders)
+                    {
+                        // Skip hidden/system folders and the hidden desktop folder we create
+                        DirectoryInfo dirInfo = new DirectoryInfo(folder);
+                        if ((dirInfo.Attributes & FileAttributes.Hidden) != 0 || 
+                            (dirInfo.Attributes & FileAttributes.System) != 0 ||
+                            folder.Equals(HiddenDesktopPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                        
+                        if (!fenceInfo.Files.Contains(folder))
+                        {
+                            foundItems.Add(folder);
+                        }
+                    }
+                }
+
+                if (foundItems.Count == 0)
+                {
+                    MessageBox.Show("No new items found on desktop matching watched extensions or folders.", 
+                        "Scan Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var result = MessageBox.Show(
+                    $"Found {foundItems.Count} items on desktop:\n\n" +
+                    string.Join("\n", foundItems.Take(10).Select(Path.GetFileName)) +
+                    (foundItems.Count > 10 ? $"\n... and {foundItems.Count - 10} more" : "") +
+                    "\n\nDo you want to move these items to this fence?",
+                    "Items Found",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    MoveItemsToFence(foundItems);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error scanning for items: {ex.Message}", 
+                    "Scan Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Console.WriteLine($"Error in ScanForWatchedItems: {ex.Message}");
+            }
+        }
+
+        private void MoveItemsToFence(List<string> items)
+        {
+            int movedCount = 0;
+            var errors = new List<string>();
+
+            foreach (var item in items)
+            {
+                try
+                {
+                    // Move file or folder using instance methods that use the fence's custom folder path
+                    if (File.Exists(item))
+                    {
+                        if (Properties.Settings.Default.hide_desktop_icons)
+                        {
+                            string filePath = HandleDraggedItem(item);
+                            fenceInfo.Files.Add(filePath);
+                            Console.WriteLine($"Scan-moved file to fence folder: {item} → {filePath}");
+                        }
+                        else
+                        {
+                            // Ensure the fence folder exists
+                            if (!Directory.Exists(fenceFolderPath))
+                            {
+                                Directory.CreateDirectory(fenceFolderPath);
+                            }
+
+                            string itemName = Path.GetFileName(item);
+                            string destPath = Path.Combine(fenceFolderPath, itemName);
+
+                            // Handle name conflicts
+                            int counter = 1;
+                            string originalDestPath = destPath;
+                            while (File.Exists(destPath))
+                            {
+                                string nameWithoutExt = Path.GetFileNameWithoutExtension(originalDestPath);
+                                string ext = Path.GetExtension(originalDestPath);
+                                string dir = Path.GetDirectoryName(originalDestPath);
+                                destPath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
+                                counter++;
+                            }
+
+                            File.Move(item, destPath);
+                            fenceInfo.Files.Add(destPath);
+                            Console.WriteLine($"Scan-moved file: {item} → {destPath}");
+                        }
+                    }
+                    else if (Directory.Exists(item))
+                    {
+                        if (Properties.Settings.Default.hide_desktop_icons)
+                        {
+                            string folderPath = HandleDraggedItem(item);
+                            fenceInfo.Files.Add(folderPath);
+                            Console.WriteLine($"Scan-moved folder to fence folder: {item} → {folderPath}");
+                        }
+                        else
+                        {
+                            // Ensure the fence folder exists
+                            if (!Directory.Exists(fenceFolderPath))
+                            {
+                                Directory.CreateDirectory(fenceFolderPath);
+                            }
+
+                            string itemName = Path.GetFileName(item);
+                            string destPath = Path.Combine(fenceFolderPath, itemName);
+
+                            // Handle name conflicts
+                            int counter = 1;
+                            string originalDestPath = destPath;
+                            while (Directory.Exists(destPath))
+                            {
+                                destPath = Path.Combine(fenceFolderPath, $"{itemName}_{counter}");
+                                counter++;
+                            }
+
+                            Directory.Move(item, destPath);
+                            fenceInfo.Files.Add(destPath);
+                            Console.WriteLine($"Scan-moved folder: {item} → {destPath}");
+                        }
+                    }
+
+                    movedCount++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{Path.GetFileName(item)}: {ex.Message}");
+                    Console.WriteLine($"Failed to move item {item}: {ex.Message}");
+                }
+            }
+
+            Save();
+            Refresh();
+
+            // Show results
+            string message = $"Successfully moved {movedCount} of {items.Count} items to the fence.";
+            if (errors.Count > 0)
+            {
+                message += $"\n\nErrors encountered:\n{string.Join("\n", errors.Take(5))}";
+                if (errors.Count > 5)
+                {
+                    message += $"\n... and {errors.Count - 5} more errors.";
+                }
+            }
+
+            MessageBox.Show(message, "Scan Results", MessageBoxButtons.OK, 
+                errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
     }
 }

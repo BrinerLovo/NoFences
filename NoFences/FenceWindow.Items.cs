@@ -24,7 +24,7 @@ namespace NoFences
             Refresh();
         }
 
-        static string HandleDraggedItem(string filePath)
+        private string HandleDraggedItem(string filePath)
         {
             if (!filePath.StartsWith(DesktopPath, StringComparison.OrdinalIgnoreCase) && !filePath.StartsWith(PublicDesktopPath, StringComparison.OrdinalIgnoreCase))
             {
@@ -34,16 +34,86 @@ namespace NoFences
 
             if (Directory.Exists(filePath))
             {
-                return HideFolder(filePath);
+                return MoveFolderToFenceFolder(filePath);
             }
             else if (File.Exists(filePath))
             {
-                return MoveFileToHiddenDesktop(filePath);
+                return MoveFileToFenceFolder(filePath);
             }
 
             return filePath;
         }
 
+        private string MoveFileToFenceFolder(string filePath)
+        {
+            // Ensure the fence folder exists
+            if (!Directory.Exists(fenceFolderPath))
+            {
+                Directory.CreateDirectory(fenceFolderPath);
+            }
+
+            string fileName = Path.GetFileName(filePath);
+            string newFilePath = Path.Combine(fenceFolderPath, fileName);
+
+            // Handle name conflicts
+            int counter = 1;
+            string originalNewFilePath = newFilePath;
+            while (File.Exists(newFilePath))
+            {
+                string nameWithoutExt = Path.GetFileNameWithoutExtension(originalNewFilePath);
+                string ext = Path.GetExtension(originalNewFilePath);
+                string dir = Path.GetDirectoryName(originalNewFilePath);
+                newFilePath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
+                counter++;
+            }
+
+            try
+            {
+                File.Move(filePath, newFilePath);
+                Console.WriteLine($"Moved file to fence folder: {filePath} → {newFilePath}");
+                return newFilePath;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to move file to fence folder: {ex.Message}");
+                return filePath;
+            }
+        }
+
+        private string MoveFolderToFenceFolder(string folderPath)
+        {
+            // Ensure the fence folder exists
+            if (!Directory.Exists(fenceFolderPath))
+            {
+                Directory.CreateDirectory(fenceFolderPath);
+            }
+
+            string folderName = Path.GetFileName(folderPath);
+            string newFolderPath = Path.Combine(fenceFolderPath, folderName);
+
+            // Handle name conflicts
+            int counter = 1;
+            string originalNewFolderPath = newFolderPath;
+            while (Directory.Exists(newFolderPath))
+            {
+                newFolderPath = Path.Combine(fenceFolderPath, $"{folderName}_{counter}");
+                counter++;
+            }
+
+            try
+            {
+                Directory.Move(folderPath, newFolderPath);
+                Console.WriteLine($"Moved folder to fence folder: {folderPath} → {newFolderPath}");
+                return newFolderPath;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to move folder to fence folder: {ex.Message}");
+                return folderPath;
+            }
+        }
+
+        // Keep the old static methods for backward compatibility when moving to global hidden desktop
         static string MoveFileToHiddenDesktop(string filePath)
         {
             if (!Directory.Exists(HiddenDesktopPath))
@@ -67,6 +137,39 @@ namespace NoFences
             }
         }
 
+        static string MoveFolderToHiddenDesktop(string folderPath)
+        {
+            if (!Directory.Exists(HiddenDesktopPath))
+            {
+                Directory.CreateDirectory(HiddenDesktopPath);
+                File.SetAttributes(HiddenDesktopPath, FileAttributes.Hidden); // Hide the folder
+            }
+
+            string folderName = Path.GetFileName(folderPath);
+            string newFolderPath = Path.Combine(HiddenDesktopPath, folderName);
+
+            // Handle name conflicts
+            int counter = 1;
+            string originalNewFolderPath = newFolderPath;
+            while (Directory.Exists(newFolderPath))
+            {
+                newFolderPath = Path.Combine(HiddenDesktopPath, $"{folderName}_{counter}");
+                counter++;
+            }
+
+            try
+            {
+                Directory.Move(folderPath, newFolderPath);
+                Console.WriteLine($"Moved folder: {folderPath} → {newFolderPath}");
+                return newFolderPath;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to move folder: {ex.Message}");
+                return folderPath;
+            }
+        }
+
         static string HideFolder(string folderPath)
         {
             try
@@ -82,20 +185,94 @@ namespace NoFences
             return folderPath;
         }
 
+        public void MoveItemToDesktop(string path)
+        {
+            // Check if the file is in this fence's folder path or the global hidden desktop
+            if (path.StartsWith(fenceFolderPath, StringComparison.OrdinalIgnoreCase) || 
+                path.StartsWith(HiddenDesktopPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (File.Exists(path))
+                {
+                    string newFilePath = Path.Combine(DesktopPath, Path.GetFileName(path));
+                    
+                    // Handle name conflicts
+                    int counter = 1;
+                    string originalNewFilePath = newFilePath;
+                    while (File.Exists(newFilePath))
+                    {
+                        string nameWithoutExt = Path.GetFileNameWithoutExtension(originalNewFilePath);
+                        string ext = Path.GetExtension(originalNewFilePath);
+                        newFilePath = Path.Combine(DesktopPath, $"{nameWithoutExt}_{counter}{ext}");
+                        counter++;
+                    }
+                    
+                    try
+                    {
+                        File.Move(path, newFilePath);
+                        Console.WriteLine($"Moved file back to desktop: {path} → {newFilePath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to move file back to desktop: {ex.Message}");
+                    }
+                }
+                else if (Directory.Exists(path))
+                {
+                    string newFolderPath = Path.Combine(DesktopPath, Path.GetFileName(path));
+                    
+                    // Handle name conflicts
+                    int counter = 1;
+                    string originalNewFolderPath = newFolderPath;
+                    while (Directory.Exists(newFolderPath))
+                    {
+                        string folderName = Path.GetFileName(originalNewFolderPath);
+                        newFolderPath = Path.Combine(DesktopPath, $"{folderName}_{counter}");
+                        counter++;
+                    }
+                    
+                    try
+                    {
+                        Directory.Move(path, newFolderPath);
+                        Console.WriteLine($"Moved folder back to desktop: {path} → {newFolderPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to move folder back to desktop: {ex.Message}");
+                    }
+                }
+            }
+        }
+
         public static void MoveFileToDesktop(string path)
         {
             // check if the file is in the hidden desktop
             if (path.StartsWith(HiddenDesktopPath, StringComparison.OrdinalIgnoreCase))
             {
-                string newFilePath = Path.Combine(DesktopPath, Path.GetFileName(path));
-                try
+                if (File.Exists(path))
                 {
-                    File.Move(path, newFilePath);
-                    Console.WriteLine($"Moved file: {path} → {newFilePath}");
+                    string newFilePath = Path.Combine(DesktopPath, Path.GetFileName(path));
+                    try
+                    {
+                        File.Move(path, newFilePath);
+                        Console.WriteLine($"Moved file back to desktop: {path} → {newFilePath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to move file back to desktop: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                else if (Directory.Exists(path))
                 {
-                    Console.WriteLine($"Failed to move file: {ex.Message}");
+                    string newFolderPath = Path.Combine(DesktopPath, Path.GetFileName(path));
+                    try
+                    {
+                        Directory.Move(path, newFolderPath);
+                        Console.WriteLine($"Moved folder back to desktop: {path} → {newFolderPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to move folder back to desktop: {ex.Message}");
+                    }
                 }
             }
         }
