@@ -182,6 +182,7 @@
             this.Name = "FenceWindow";
             this.ShowIcon = false;
             this.ShowInTaskbar = false;
+            this.Deactivate += new System.EventHandler(this.FenceWindow_Deactivate);
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.FenceWindow_FormClosed);
             this.Load += new System.EventHandler(this.FenceWindow_Load);
             this.LocationChanged += new System.EventHandler(this.FenceWindow_LocationChanged);

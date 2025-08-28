@@ -6,8 +6,10 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using static NoFences.Win32.WindowUtil;
+using Timer = System.Windows.Forms.Timer;
 
 namespace NoFences
 {
@@ -68,6 +70,11 @@ namespace NoFences
         private int draggedItemIndex = -1;
         private readonly int itemWidtHalf = itemWidth / 2;
 
+        private FileSystemWatcher fenceWatcher;
+        private FileSystemWatcher desktopWatcher;
+        private readonly string watchedExtension = ".txt"; // Change as needed
+        private string fenceFolderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoFences", fenceInfo.Id.ToString());
+
         private void ReloadFonts()
         {
             var family = new FontFamily("Segoe UI");
@@ -117,6 +124,79 @@ namespace NoFences
             lockedToolStripMenuItem.Checked = fenceInfo.Locked;
             minifyToolStripMenuItem.Checked = fenceInfo.CanMinify;
             Minify();
+
+            // --- File Watchers ---
+            InitFileWatchers();
+        }
+
+        private void InitFileWatchers()
+        {
+            // Watch the fence folder for changes
+            fenceWatcher = new FileSystemWatcher(fenceFolderPath)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                Filter = "*" + watchedExtension,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true
+            };
+            fenceWatcher.Created += (s, e) => OnFenceFolderChanged(e.FullPath);
+            fenceWatcher.Changed += (s, e) => OnFenceFolderChanged(e.FullPath);
+            fenceWatcher.Renamed += (s, e) => OnFenceFolderChanged(e.FullPath);
+            fenceWatcher.Deleted += (s, e) => OnFenceFolderChanged(e.FullPath);
+
+            // Watch the Desktop for new files of the watched extension
+            desktopWatcher = new FileSystemWatcher(DesktopPath)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+                Filter = "*" + watchedExtension,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true
+            };
+            desktopWatcher.Created += (s, e) => OnDesktopFileCreated(e.FullPath);
+        }
+
+        private void OnFenceFolderChanged(string path)
+        {
+            // Check if the file/folder is in the fenceInfo.Files and update UI
+            this.BeginInvoke((Action)(() =>
+            {
+                // Remove missing files, add new ones
+                var files = Directory.GetFiles(fenceFolderPath, "*" + watchedExtension).ToList();
+                fenceInfo.Files.RemoveAll(f => !File.Exists(f));
+                foreach (var file in files)
+                {
+                    if (!fenceInfo.Files.Contains(file))
+                        fenceInfo.Files.Add(file);
+                }
+                Save();
+                Refresh();
+            }));
+        }
+
+        private void OnDesktopFileCreated(string path)
+        {
+            // Only move if file has the watched extension and doesn't already exist in the fence
+            if (Path.GetExtension(path).Equals(watchedExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                this.BeginInvoke((Action)(() =>
+                {
+                    if (!fenceInfo.Files.Contains(path))
+                    {
+                        string destPath = Path.Combine(fenceFolderPath, Path.GetFileName(path));
+                        try
+                        {
+                            File.Move(path, destPath);
+                            fenceInfo.Files.Add(destPath);
+                            Save();
+                            Refresh();
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to move file from Desktop: {ex.Message}");
+                        }
+                    }
+                }));
+            }
         }
 
         protected override void WndProc(ref Message m)
@@ -255,6 +335,7 @@ namespace NoFences
                 draggedItemIndex = -1;
                 draggedItem = null;
                 isDragging = false;
+                Refresh(); // Ensure UI updates after drag-drop
                 return;
             }
 
@@ -276,7 +357,13 @@ namespace NoFences
             }
 
             Save();
-            Refresh();
+            this.BeginInvoke((Action)(() =>
+            {
+                this.Invalidate(true);
+                this.Refresh();
+            }));
+
+            Refresh(); // Ensure UI updates after drag-drop
         }
 
         private void FenceWindow_QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
@@ -299,7 +386,14 @@ namespace NoFences
                     Cursor = Cursors.Default;
                     e.Action = DragAction.Cancel;
 
+                    this.BeginInvoke((Action)(() =>
+                    {
+                        this.Invalidate(true);
+                        this.Refresh();
+                    }));
+
                     Console.WriteLine("Item dropped outside the form");
+                    Refresh(); // Ensure UI updates after drag-out
                 }
             }
             else if (e.Action == DragAction.Cancel)
@@ -665,6 +759,11 @@ namespace NoFences
         }
 
         public bool IsMinified => state == FenceState.Minified;
+
+        private void FenceWindow_Deactivate(object sender, EventArgs e)
+        {
+            Update();
+        }
 
         public bool CanInteractWithContent()
         {

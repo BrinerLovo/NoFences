@@ -158,7 +158,7 @@ namespace NoFences
                     entry.Open();
                 }
 
-                if (mouseOver && MouseButtons == MouseButtons.Left && selectedItem != null)
+                if (mouseOver && MouseButtons == MouseButtons.Left)
                 {
                     if (Math.Abs(mousePos.X - x) > 8 || Math.Abs(mousePos.Y - y) > 8) // Prevent accidental drag
                     {
