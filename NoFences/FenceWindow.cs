@@ -1,4 +1,4 @@
-﻿using NoFences.Model;
+using NoFences.Model;
 using NoFences.Util;
 using NoFences.Win32;
 using Peter;
@@ -15,6 +15,8 @@ namespace NoFences
 {
     public partial class FenceWindow : Form
     {
+        private const string InternalItemDragFormat = "NoFences.InternalItemDrag";
+
         public enum FenceState
         {
             Normal,
@@ -74,6 +76,8 @@ namespace NoFences
         private readonly ThumbnailProvider thumbnailProvider = new ThumbnailProvider();
         private readonly object saveLock = new object();
         private int draggedItemIndex = -1;
+        private readonly string internalDragSourceId = Guid.NewGuid().ToString("N");
+        private bool internalDropHandled;
         private readonly int itemWidtHalf = itemWidth / 2;
 
         private FileSystemWatcher fenceWatcher;
@@ -102,6 +106,8 @@ namespace NoFences
         public FenceWindow(FenceInfo fenceInfo)
         {
             InitializeComponent();
+            this.fenceInfo = fenceInfo ?? throw new ArgumentNullException(nameof(fenceInfo));
+            InitializeFenceCommands();
             DropShadow.ApplyShadows(this);
             BlurUtil.EnableBlur(Handle, 50);
             HideFromAltTab(Handle);
@@ -124,7 +130,6 @@ namespace NoFences
             AllowDrop = true;
             KeyPreview = true; // Enable key events for the form
 
-            this.fenceInfo = fenceInfo;
             Text = fenceInfo.Name;
             Location = new Point(fenceInfo.PosX, fenceInfo.PosY);
 
@@ -474,65 +479,106 @@ namespace NoFences
         {
             if (lockedToolStripMenuItem.Checked) return;
 
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.StringFormat))
+            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(InternalItemDragFormat))
                 e.Effect = DragDropEffects.Move;
         }
 
         private void FenceWindow_DragDrop(object sender, DragEventArgs e)
         {
-            // if we are dragging a item from the box inside the box.
-            if (e.Data.GetDataPresent(DataFormats.StringFormat))
+            string dragSourceId = e.Data.GetDataPresent(InternalItemDragFormat)
+                ? e.Data.GetData(InternalItemDragFormat) as string
+                : null;
+
+            // Handle a reorder only when the drag originated from this exact window.
+            // Mark it handled even when its position is unchanged.
+            if (string.Equals(dragSourceId, internalDragSourceId, StringComparison.Ordinal))
             {
+                internalDropHandled = true;
+                e.Effect = DragDropEffects.Move;
                 Point dropPoint = PointToClient(new Point(e.X, e.Y));
                 int newIndex = GetItemIndexAtPosition(dropPoint);
+                int sourceIndex = draggedItem == null
+                    ? -1
+                    : fenceInfo.Files.FindIndex(path =>
+                        string.Equals(path, draggedItem, StringComparison.OrdinalIgnoreCase));
 
-                // re-order the items
-                if (newIndex != -1 && newIndex != draggedItemIndex && draggedItem != null)
+                if (newIndex >= 0 && sourceIndex >= 0 && draggedItem != null)
                 {
                     var files = fenceInfo.Files.ToList();
-                    files.RemoveAt(draggedItemIndex);
-                    // make sure the new index in the bounds of the list
-                    if (newIndex > files.Count) newIndex = files.Count;
+                    files.RemoveAt(sourceIndex);
+                    newIndex = Math.Max(0, Math.Min(newIndex, files.Count));
 
                     if (!files.Contains(draggedItem)) files.Insert(newIndex, draggedItem);
-                    fenceInfo.Files = files; // Update list
-                    Save();
+                    if (!files.SequenceEqual(fenceInfo.Files, StringComparer.OrdinalIgnoreCase))
+                    {
+                        RecordReorderUndo(draggedItem, sourceIndex);
+                        fenceInfo.Files = files;
+                        Save();
+                    }
                 }
 
                 draggedItemIndex = -1;
                 draggedItem = null;
                 isDragging = false;
-                Refresh(); // Ensure UI updates after drag-drop
+                Invalidate();
                 return;
             }
 
-            string[] dropped = (string[])e.Data.GetData(DataFormats.FileDrop);
+            string[] dropped = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (dropped == null || dropped.Length == 0)
+                return;
+
+            var addedPaths = new List<string>(dropped.Length);
+            int failedMoveCount = 0;
             foreach (var item in dropped)
             {
-                if (!fenceInfo.Files.Contains(item) && ItemExists(item))
+                if (!fenceInfo.Files.Contains(item, StringComparer.OrdinalIgnoreCase) && ItemExists(item))
                 {
-                    if (Properties.Settings.Default.hide_desktop_icons)
+                    if (TryMoveItemToFenceFolder(item, out string itemPath))
                     {
-                        string itemPath = HandleDraggedItem(item);
-                        fenceInfo.Files.Add(itemPath);
-                        Console.WriteLine($"Added item to fence (moved to fence folder): {item} → {itemPath}");
+                        if (!fenceInfo.Files.Contains(itemPath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            fenceInfo.Files.Add(itemPath);
+                            addedPaths.Add(itemPath);
+                        }
                     }
                     else
                     {
-                        fenceInfo.Files.Add(item);
-                        Console.WriteLine($"Added item to fence (referenced): {item}");
+                        failedMoveCount++;
                     }
                 }
             }
 
+            if (addedPaths.Count == 0)
+            {
+                e.Effect = DragDropEffects.None;
+                if (failedMoveCount > 0)
+                {
+                    MessageBox.Show(
+                        "The item could not be moved into the fence folder.",
+                        "Move to fence",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+                return;
+            }
+
+            e.Effect = DragDropEffects.Move;
+
             Save(); // Ensure we save after adding files
             this.BeginInvoke((Action)(() =>
             {
-                this.Invalidate(true);
-                this.Refresh();
+                Invalidate();
             }));
 
-            Refresh(); // Ensure UI updates after drag-drop
+            if (failedMoveCount > 0)
+            {
+                MessageBox.Show(
+                    $"Moved {addedPaths.Count} item(s), but {failedMoveCount} item(s) could not be moved.",
+                    "Move to fence",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
         }
 
         private void FenceWindow_QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
@@ -672,7 +718,7 @@ namespace NoFences
                 if (scrollOffset < 0)
                     scrollOffset = 0;
                 if (scrollOffset > scrollHeight)
-                    scrollHeight = scrollHeight;
+                    scrollOffset = scrollHeight;
 
                 initialMousePosition = e.Location;
             }
@@ -688,12 +734,16 @@ namespace NoFences
                     draggedItem = dragStartItem;
                     draggedItemIndex = dragStartItemIndex;
                     
-                    // Create a DataObject with the file path for proper Windows drag-and-drop
-                    var data = new DataObject(DataFormats.FileDrop, new string[] { dragStartItem });
+                    // Keep FileDrop for Explorer and other fences, and use a private
+                    // format to distinguish an in-place reorder from an external move.
+                    internalDropHandled = false;
+                    var data = new DataObject();
+                    data.SetData(InternalItemDragFormat, internalDragSourceId);
+                    data.SetData(DataFormats.FileDrop, new[] { dragStartItem });
                     var result = DoDragDrop(data, DragDropEffects.Move | DragDropEffects.Copy);
                     
                     // Handle the result of the drag operation
-                    if (result == DragDropEffects.Move)
+                    if (result == DragDropEffects.Move && !internalDropHandled)
                     {
                         // File was moved outside the fence - remove it from our list
                         fenceInfo.Files.Remove(dragStartItem);
@@ -918,7 +968,7 @@ namespace NoFences
             if (scrollOffset < 0)
                 scrollOffset = 0;
             if (scrollOffset > scrollHeight)
-                scrollHeight = scrollHeight;
+                scrollOffset = scrollHeight;
 
             Invalidate();
         }
@@ -991,6 +1041,8 @@ namespace NoFences
         // Missing event handlers
         private void contextMenuStrip1_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            UpdateUndoCommands();
+
             // Update menu item states based on current fence configuration
             bool hasWatchedExtensions = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Count > 0;
             
@@ -1037,6 +1089,14 @@ namespace NoFences
 
         private void FenceWindow_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Control && e.KeyCode == Keys.Z)
+            {
+                UndoLastFenceChange();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
             if (e.KeyCode == Keys.Delete && selectedItem != null && !lockedToolStripMenuItem.Checked)
             {
                 Console.WriteLine($"Delete key pressed for selected item: {selectedItem}");
@@ -1146,78 +1206,16 @@ namespace NoFences
             {
                 try
                 {
-                    // Move file or folder using instance methods that use the fence's custom folder path
-                    if (File.Exists(item))
+                    if (TryMoveItemToFenceFolder(item, out string destinationPath))
                     {
-                        if (Properties.Settings.Default.hide_desktop_icons)
-                        {
-                            string filePath = HandleDraggedItem(item);
-                            fenceInfo.Files.Add(filePath);
-                            Console.WriteLine($"Scan-moved file to fence folder: {item} → {filePath}");
-                        }
-                        else
-                        {
-                            // Ensure the fence folder exists
-                            if (!Directory.Exists(fenceFolderPath))
-                            {
-                                Directory.CreateDirectory(fenceFolderPath);
-                            }
-
-                            string itemName = Path.GetFileName(item);
-                            string destPath = Path.Combine(fenceFolderPath, itemName);
-
-                            // Handle name conflicts
-                            int counter = 1;
-                            string originalDestPath = destPath;
-                            while (File.Exists(destPath))
-                            {
-                                string nameWithoutExt = Path.GetFileNameWithoutExtension(originalDestPath);
-                                string ext = Path.GetExtension(originalDestPath);
-                                string dir = Path.GetDirectoryName(originalDestPath);
-                                destPath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
-                                counter++;
-                            }
-
-                            File.Move(item, destPath);
-                            fenceInfo.Files.Add(destPath);
-                            Console.WriteLine($"Scan-moved file: {item} → {destPath}");
-                        }
+                        if (!fenceInfo.Files.Contains(destinationPath, StringComparer.OrdinalIgnoreCase))
+                            fenceInfo.Files.Add(destinationPath);
+                        movedCount++;
                     }
-                    else if (Directory.Exists(item))
+                    else
                     {
-                        if (Properties.Settings.Default.hide_desktop_icons)
-                        {
-                            string folderPath = HandleDraggedItem(item);
-                            fenceInfo.Files.Add(folderPath);
-                            Console.WriteLine($"Scan-moved folder to fence folder: {item} → {folderPath}");
-                        }
-                        else
-                        {
-                            // Ensure the fence folder exists
-                            if (!Directory.Exists(fenceFolderPath))
-                            {
-                                Directory.CreateDirectory(fenceFolderPath);
-                            }
-
-                            string itemName = Path.GetFileName(item);
-                            string destPath = Path.Combine(fenceFolderPath, itemName);
-
-                            // Handle name conflicts
-                            int counter = 1;
-                            string originalDestPath = destPath;
-                            while (Directory.Exists(destPath))
-                            {
-                                destPath = Path.Combine(fenceFolderPath, $"{itemName}_{counter}");
-                                counter++;
-                            }
-
-                            Directory.Move(item, destPath);
-                            fenceInfo.Files.Add(destPath);
-                            Console.WriteLine($"Scan-moved folder: {item} → {destPath}");
-                        }
+                        errors.Add($"{Path.GetFileName(item)}: could not be moved");
                     }
-
-                    movedCount++;
                 }
                 catch (Exception ex)
                 {

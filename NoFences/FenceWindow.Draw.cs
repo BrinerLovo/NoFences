@@ -18,7 +18,6 @@ namespace NoFences
         private SolidBrush textShadowBrush;
 
         private Fader opacityFader;
-        private bool suspendContentDraw = false;
 
         public void RefreshBrushes()
         {
@@ -124,7 +123,7 @@ namespace NoFences
 
         private void RenderEntry(Graphics g, FenceEntry entry, int x, int y, int index)
         {
-            if (isAnimating || suspendContentDraw) return; // avoid lagging
+            if (isAnimating) return;
 
             var icon = entry.ExtractIcon(thumbnailProvider);
             var name = entry.Name;
@@ -193,18 +192,11 @@ namespace NoFences
         public void SetOverallOpacity(double opacity)
         {
             if (opacityFader == null)
-            {
-                opacityFader = new Fader(0.22f).OnFinish(() =>
-                {
-                    suspendContentDraw = false;
-                });
-            }
+                opacityFader = new Fader(0.22f);
 
-            suspendContentDraw = true;
             opacityFader.StartFade(this.Opacity, opacity, value =>
             {
                 Opacity = value;
-                Refresh();
             });
         }
     }

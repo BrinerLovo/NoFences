@@ -69,6 +69,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Control\ModernMenuRenderer.cs" />
+    <Compile Include="Control\UiTheme.cs" />
+    <Compile Include="CustomFolderDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="CustomFolderDialog.Designer.cs">
+      <DependentUpon>CustomFolderDialog.cs</DependentUpon>
+    </Compile>
     <Compile Include="EditDialog.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -76,6 +83,9 @@
       <DependentUpon>EditDialog.cs</DependentUpon>
     </Compile>
     <Compile Include="FenceWindow.Draw.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FenceWindow.History.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="FenceWindow.Items.cs">
@@ -112,6 +122,7 @@
     <Compile Include="Util\AppSettings.cs" />
     <Compile Include="Util\Extensions.cs" />
     <Compile Include="Util\MathUtils.cs" />
+    <Compile Include="Util\PathUtil.cs" />
     <Compile Include="Util\StartupManager.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />

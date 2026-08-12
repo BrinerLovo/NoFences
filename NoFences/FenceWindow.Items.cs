@@ -1,4 +1,5 @@
 ﻿using NoFences.Model;
+using NoFences.Util;
 using System;
 using System.Drawing;
 using System.IO;
@@ -13,103 +14,63 @@ namespace NoFences
 
         private void RemoveSelectedItem()
         {
-            Console.WriteLine($"RemoveSelectedItem called for item: {hoveringItem}");
-            Console.WriteLine($"Files before removal: {string.Join(", ", fenceInfo.Files)}");
-            
-            fenceInfo.Files.RemoveAll(x => x == hoveringItem);
+            string itemToRemove = selectedItem ?? hoveringItem;
+            if (string.IsNullOrEmpty(itemToRemove))
+                return;
+
+            int itemIndex = fenceInfo.Files.FindIndex(
+                path => string.Equals(path, itemToRemove, StringComparison.OrdinalIgnoreCase));
+            if (itemIndex < 0)
+                return;
+
+            RecordRemoveUndo(itemToRemove, itemIndex);
+            fenceInfo.Files.RemoveAt(itemIndex);
+            selectedItem = null;
             hoveringItem = null;
-            
-            Console.WriteLine($"Files after removal: {string.Join(", ", fenceInfo.Files)}");
+
             Save();
-            Refresh();
+            Invalidate();
         }
 
-        private string HandleDraggedItem(string filePath)
+        private bool TryMoveItemToFenceFolder(string sourcePath, out string destinationPath)
         {
-            if (!filePath.StartsWith(DesktopPath, StringComparison.OrdinalIgnoreCase) && !filePath.StartsWith(PublicDesktopPath, StringComparison.OrdinalIgnoreCase))
+            destinationPath = null;
+            bool isDirectory = Directory.Exists(sourcePath);
+            if (!isDirectory && !File.Exists(sourcePath))
+                return false;
+
+            string trimmedSource = sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (PathUtil.IsSamePath(trimmedSource, fenceFolderPath)
+                || PathUtil.IsPathWithinDirectory(fenceFolderPath, trimmedSource))
             {
-                Console.WriteLine($"Non desktop: {filePath}");
-                return filePath; // Ignore non-Desktop files
+                return false;
             }
 
-            if (Directory.Exists(filePath))
+            string sourceParent = Path.GetDirectoryName(trimmedSource);
+            if (PathUtil.IsSamePath(sourceParent, fenceFolderPath))
             {
-                return MoveFolderToFenceFolder(filePath);
-            }
-            else if (File.Exists(filePath))
-            {
-                return MoveFileToFenceFolder(filePath);
-            }
-
-            return filePath;
-        }
-
-        private string MoveFileToFenceFolder(string filePath)
-        {
-            // Ensure the fence folder exists
-            if (!Directory.Exists(fenceFolderPath))
-            {
-                Directory.CreateDirectory(fenceFolderPath);
-            }
-
-            string fileName = Path.GetFileName(filePath);
-            string newFilePath = Path.Combine(fenceFolderPath, fileName);
-
-            // Handle name conflicts
-            int counter = 1;
-            string originalNewFilePath = newFilePath;
-            while (File.Exists(newFilePath))
-            {
-                string nameWithoutExt = Path.GetFileNameWithoutExtension(originalNewFilePath);
-                string ext = Path.GetExtension(originalNewFilePath);
-                string dir = Path.GetDirectoryName(originalNewFilePath);
-                newFilePath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
-                counter++;
+                destinationPath = trimmedSource;
+                return true;
             }
 
             try
             {
-                File.Move(filePath, newFilePath);
-                Console.WriteLine($"Moved file to fence folder: {filePath} → {newFilePath}");
-                return newFilePath;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to move file to fence folder: {ex.Message}");
-                return filePath;
-            }
-        }
-
-        private string MoveFolderToFenceFolder(string folderPath)
-        {
-            // Ensure the fence folder exists
-            if (!Directory.Exists(fenceFolderPath))
-            {
                 Directory.CreateDirectory(fenceFolderPath);
-            }
+                destinationPath = PathUtil.GetUniqueDestinationPath(trimmedSource, fenceFolderPath, isDirectory);
 
-            string folderName = Path.GetFileName(folderPath);
-            string newFolderPath = Path.Combine(fenceFolderPath, folderName);
+                if (isDirectory)
+                    Directory.Move(trimmedSource, destinationPath);
+                else
+                    File.Move(trimmedSource, destinationPath);
 
-            // Handle name conflicts
-            int counter = 1;
-            string originalNewFolderPath = newFolderPath;
-            while (Directory.Exists(newFolderPath))
-            {
-                newFolderPath = Path.Combine(fenceFolderPath, $"{folderName}_{counter}");
-                counter++;
-            }
-
-            try
-            {
-                Directory.Move(folderPath, newFolderPath);
-                Console.WriteLine($"Moved folder to fence folder: {folderPath} → {newFolderPath}");
-                return newFolderPath;
+                Console.WriteLine($"Moved item to fence folder: {trimmedSource} → {destinationPath}");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to move folder to fence folder: {ex.Message}");
-                return folderPath;
+                Console.WriteLine($"Failed to move item to fence folder: {ex.Message}");
+                destinationPath = null;
+                return false;
             }
         }
 
