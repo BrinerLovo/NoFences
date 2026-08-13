@@ -3,6 +3,7 @@ using NoFences.Model;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -61,13 +62,14 @@ namespace NoFences
 
             var addedPaths = new List<string>(dropped.Length);
             var handledSourcePaths = new List<string>(dropped.Length);
+            var moveErrors = new List<string>();
             int failedMoveCount = 0;
             foreach (string item in dropped)
             {
                 if (fenceInfo.Files.Contains(item, StringComparer.OrdinalIgnoreCase) || !ItemExists(item))
                     continue;
 
-                if (TryMoveItemToFenceFolder(item, out string itemPath))
+                if (TryMoveItemToFenceFolder(item, out string itemPath, out string errorMessage))
                 {
                     if (!fenceInfo.Files.Contains(itemPath, StringComparer.OrdinalIgnoreCase))
                     {
@@ -83,6 +85,9 @@ namespace NoFences
                 else
                 {
                     failedMoveCount++;
+                    moveErrors.Add(Path.GetFileName(item) + ": " + (string.IsNullOrWhiteSpace(errorMessage)
+                        ? "Windows rejected the move."
+                        : errorMessage));
                 }
             }
 
@@ -92,7 +97,7 @@ namespace NoFences
                 if (failedMoveCount > 0)
                 {
                     MessageBox.Show(
-                        "The item could not be moved into the fence folder.",
+                        "The item could not be moved into the fence folder.\n\n" + moveErrors[0],
                         "Move to fence",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
@@ -111,7 +116,8 @@ namespace NoFences
             if (failedMoveCount > 0)
             {
                 MessageBox.Show(
-                    $"Moved {handledSourcePaths.Count} item(s), but {failedMoveCount} item(s) could not be moved.",
+                    $"Moved {handledSourcePaths.Count} item(s), but {failedMoveCount} item(s) could not be moved.\n\n"
+                    + string.Join("\n", moveErrors.Take(3)),
                     "Move to fence",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);

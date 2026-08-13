@@ -43,6 +43,8 @@ namespace NoFences.Util
                 fenceInfo.SortMode = FenceSortMode.Custom;
             if (fenceInfo.SortMode == FenceSortMode.Custom)
                 fenceInfo.SortDescending = false;
+            if (!Enum.IsDefined(typeof(FenceDisplayMode), fenceInfo.DisplayMode))
+                fenceInfo.DisplayMode = FenceDisplayMode.Icons;
 
             if (!string.IsNullOrWhiteSpace(fenceInfo.CustomFolderPath))
                 fenceInfo.CustomFolderPath = fenceInfo.CustomFolderPath.Trim();

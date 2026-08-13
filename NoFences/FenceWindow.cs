@@ -601,8 +601,56 @@ namespace NoFences
             else
                 FenceManager.Instance.RemoveFence(this);
 
-            if (Application.OpenForms.Count == 0)
-                Application.Exit();
+        }
+
+        public string FenceName => fenceInfo.Name;
+        public Guid FenceId => fenceInfo.Id;
+        public bool IsFenceVisible => !fenceInfo.Hidden;
+        public bool IsFenceLocked => fenceInfo.Locked;
+
+        public void SetFenceVisible(bool visible)
+        {
+            fenceInfo.Hidden = !visible;
+            if (visible)
+            {
+                Show();
+                InvalidateFenceContent();
+            }
+            else
+            {
+                Hide();
+            }
+            Save();
+        }
+
+        public void SetFenceLocked(bool locked)
+        {
+            fenceInfo.Locked = locked;
+            lockedToolStripMenuItem.Checked = locked;
+            lockedTick.Checked = locked;
+            Save();
+        }
+
+        public bool AcceptRoutedItem(string sourcePath)
+        {
+            if (!TryMoveItemToFenceFolder(sourcePath, out string destinationPath, out string errorMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(errorMessage))
+                    AppLogger.Error($"A routing rule could not move '{sourcePath}': {errorMessage}", null);
+                return false;
+            }
+            if (!fenceInfo.Files.Contains(destinationPath, StringComparer.OrdinalIgnoreCase))
+                fenceInfo.Files.Add(destinationPath);
+            Save();
+            InvalidateFenceContent();
+            return true;
+        }
+
+        public void FlushPendingSaves()
+        {
+            throttledMove.Flush();
+            throttledResize.Flush();
+            Save();
         }
 
         private void Save()
@@ -788,7 +836,7 @@ namespace NoFences
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Close();
+            SetFenceVisible(false);
         }
 
         private void closeAppMenuItem_Click(object sender, EventArgs e)

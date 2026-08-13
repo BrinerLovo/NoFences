@@ -89,12 +89,17 @@ namespace NoFences
 
         private void syncToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            SyncFromTray();
+        }
+
+        public void SyncFromTray(bool showResult = true)
+        {
             try
             {
                 FenceFolderSyncResult result = SynchronizeFenceFolder(recordUndo: true);
                 if (!result.Changed)
                 {
-                    MessageBox.Show(
+                    if (showResult) MessageBox.Show(
                         "The fence is already synchronized with its folder.",
                         "Sync",
                         MessageBoxButtons.OK,
@@ -102,7 +107,7 @@ namespace NoFences
                     return;
                 }
 
-                MessageBox.Show(
+                if (showResult) MessageBox.Show(
                     $"Sync complete. Added {result.AddedPaths.Count} item(s) and removed {result.RemovedPaths.Count} stale item(s).",
                     "Sync",
                     MessageBoxButtons.OK,
@@ -110,7 +115,7 @@ namespace NoFences
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
+                if (showResult) MessageBox.Show(
                     "Unable to synchronize the fence folder:\n" + ex.Message,
                     "Sync",
                     MessageBoxButtons.OK,

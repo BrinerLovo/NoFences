@@ -28,14 +28,22 @@ namespace NoFences
 
         private bool TryMoveItemToFenceFolder(string sourcePath, out string destinationPath)
         {
+            return TryMoveItemToFenceFolder(sourcePath, out destinationPath, out _);
+        }
+
+        private bool TryMoveItemToFenceFolder(
+            string sourcePath,
+            out string destinationPath,
+            out string errorMessage)
+        {
             bool moved = FenceFileMover.TryMove(
                 sourcePath,
                 fenceFolderPath,
                 out destinationPath,
-                out string errorMessage);
+                out errorMessage);
 
             if (!moved && !string.IsNullOrEmpty(errorMessage))
-                System.Diagnostics.Debug.WriteLine($"Unable to move item into fence: {errorMessage}");
+                AppLogger.Error($"Unable to move '{sourcePath}' into fence '{fenceInfo.Name}': {errorMessage}", null);
 
             return moved;
         }

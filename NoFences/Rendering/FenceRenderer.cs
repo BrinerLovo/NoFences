@@ -6,6 +6,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.IO;
+using System.Windows.Forms;
 
 namespace NoFences.Rendering
 {
@@ -15,6 +18,8 @@ namespace NoFences.Rendering
         private readonly ThumbnailProvider thumbnailProvider;
         private readonly Dictionary<string, FenceEntry> entries =
             new Dictionary<string, FenceEntry>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> details =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly StringFormat titleFormat = new StringFormat { Alignment = StringAlignment.Center };
         private readonly StringFormat itemFormat = new StringFormat
         {
@@ -89,7 +94,7 @@ namespace NoFences.Rendering
                 FenceLayoutItem item = layout.Items[index];
                 if (item.Bounds.Bottom < titleHeight || item.Bounds.Top > clientRectangle.Height)
                     continue;
-                RenderItem(graphics, item, selectedPaths.Contains(item.Path),
+                RenderItem(graphics, item, layout.DisplayMode, selectedPaths.Contains(item.Path),
                     string.Equals(hoveredPath, item.Path, StringComparison.OrdinalIgnoreCase));
             }
 
@@ -111,7 +116,12 @@ namespace NoFences.Rendering
             graphics.Restore(state);
         }
 
-        private void RenderItem(Graphics graphics, FenceLayoutItem item, bool selected, bool hovered)
+        private void RenderItem(
+            Graphics graphics,
+            FenceLayoutItem item,
+            FenceDisplayMode displayMode,
+            bool selected,
+            bool hovered)
         {
             FenceEntry entry = GetEntry(item.Path);
             if (entry == null)
@@ -120,6 +130,12 @@ namespace NoFences.Rendering
             Icon icon = entry.ExtractIcon(thumbnailProvider);
             if (icon == null)
                 return;
+
+            if (displayMode != FenceDisplayMode.Icons)
+            {
+                RenderListItem(graphics, item, entry, icon, displayMode, selected, hovered);
+                return;
+            }
             int iconX = item.Bounds.Left + FenceLayout.ItemWidth / 2 - icon.Width / 2;
             var textPosition = new PointF(item.Bounds.Left, item.Bounds.Top + icon.Height + 5);
             var textSize = new SizeF(FenceLayout.ItemWidth, FenceLayout.TextHeight);
@@ -150,6 +166,100 @@ namespace NoFences.Rendering
             graphics.DrawString(entry.Name, itemFont, textBrush, new RectangleF(textPosition, textSize), itemFormat);
         }
 
+        private void RenderListItem(
+            Graphics graphics,
+            FenceLayoutItem item,
+            FenceEntry entry,
+            Icon icon,
+            FenceDisplayMode displayMode,
+            bool selected,
+            bool hovered)
+        {
+            Rectangle outline = item.Bounds;
+            if (selected)
+            {
+                graphics.FillRectangle(hovered ? selectedHoverBrush : selectedBrush, outline);
+                graphics.DrawRectangle(itemOutlinePen, outline.Shrink(1));
+            }
+            else if (hovered)
+            {
+                graphics.FillRectangle(hoverBrush, outline);
+                graphics.DrawRectangle(itemOutlinePen, outline.Shrink(1));
+            }
+
+            int iconSize = displayMode == FenceDisplayMode.CompactList ? 20 : 28;
+            var iconBounds = new Rectangle(
+                outline.Left + 5,
+                outline.Top + Math.Max(0, (outline.Height - iconSize) / 2),
+                iconSize,
+                iconSize);
+            graphics.DrawIcon(icon, iconBounds);
+
+            int textLeft = iconBounds.Right + 8;
+            if (displayMode == FenceDisplayMode.CompactList)
+            {
+                TextRenderer.DrawText(
+                    graphics,
+                    entry.Name,
+                    itemFont,
+                    new Rectangle(textLeft, outline.Top, Math.Max(1, outline.Right - textLeft - 5), outline.Height),
+                    textBrush.Color,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                return;
+            }
+
+            TextRenderer.DrawText(
+                graphics,
+                entry.Name,
+                itemFont,
+                new Rectangle(textLeft, outline.Top + 3, Math.Max(1, outline.Right - textLeft - 5), 20),
+                textBrush.Color,
+                TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(
+                graphics,
+                GetDetails(entry),
+                itemFont,
+                new Rectangle(textLeft, outline.Top + 22, Math.Max(1, outline.Right - textLeft - 5), 18),
+                Color.FromArgb(170, Color.White),
+                TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
+        private string GetDetails(FenceEntry entry)
+        {
+            if (details.TryGetValue(entry.Path, out string cachedDetails))
+                return cachedDetails;
+
+            string value;
+            try
+            {
+                if (entry.Type == EntryType.Folder)
+                    value = "Folder  ·  " + Directory.GetLastWriteTime(entry.Path).ToString("g", CultureInfo.CurrentCulture);
+                else
+                {
+                    var file = new FileInfo(entry.Path);
+                    value = FormatSize(file.Length) + "  ·  " + file.LastWriteTime.ToString("g", CultureInfo.CurrentCulture);
+                }
+
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                value = entry.Type == EntryType.Folder ? "Folder" : Path.GetExtension(entry.Path).TrimStart('.').ToUpperInvariant();
+            }
+            details[entry.Path] = value;
+            return value;
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            if (bytes < 1024)
+                return bytes + " B";
+            if (bytes < 1024L * 1024L)
+                return (bytes / 1024D).ToString("0.#", CultureInfo.CurrentCulture) + " KB";
+            if (bytes < 1024L * 1024L * 1024L)
+                return (bytes / (1024D * 1024D)).ToString("0.#", CultureInfo.CurrentCulture) + " MB";
+            return (bytes / (1024D * 1024D * 1024D)).ToString("0.#", CultureInfo.CurrentCulture) + " GB";
+        }
+
         private FenceEntry GetEntry(string path)
         {
             if (entries.TryGetValue(path, out FenceEntry entry))
@@ -162,6 +272,7 @@ namespace NoFences.Rendering
         public void InvalidateEntries()
         {
             entries.Clear();
+            details.Clear();
         }
 
         public void Dispose()
@@ -170,6 +281,7 @@ namespace NoFences.Rendering
             titleFormat.Dispose();
             itemFormat.Dispose();
             entries.Clear();
+            details.Clear();
         }
 
         private void DisposeAppearanceResources()

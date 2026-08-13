@@ -1,6 +1,8 @@
 using NoFences.Model;
 using NoFences.Util;
 using NoFences.Win32;
+using NoFences.Routing;
+using NoFences.Transfer;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -194,9 +196,84 @@ namespace NoFences
             openLogsButton.Click += (sender, args) => OpenFolder(AppLogger.DirectoryPath);
             var actionRow = CreateActionRow(openDataButton, openLogsButton);
 
+            Button routingButton = CreateButton("Routing rules", 120);
+            routingButton.Click += (sender, args) =>
+            {
+                using (var window = new RoutingRulesWindow())
+                    window.ShowDialog(this);
+            };
+            Button exportButton = CreateButton("Export layout", 116);
+            exportButton.Click += ExportLayout_Click;
+            Button importButton = CreateButton("Import layout", 116);
+            importButton.Click += ImportLayout_Click;
+            var organizationRow = CreateActionRow(routingButton, exportButton, importButton);
+
             return CreatePage(
                 CreateSection("Startup and desktop", "Control how NoFences integrates with Windows.", startupCheckBox, hideDesktopCheckBox, showContainerCheckBox),
+                CreateSection("Organization", "Automate file routing or move your complete setup between installations.", organizationRow),
                 CreateSection("Safety and diagnostics", "Keep destructive actions explicit and make troubleshooting accessible.", confirmDeletionCheckBox, actionRow));
+        }
+
+        private void ExportLayout_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new SaveFileDialog
+            {
+                AddExtension = true,
+                DefaultExt = "nofences",
+                Filter = "NoFences layout (*.nofences)|*.nofences|XML files (*.xml)|*.xml",
+                FileName = "NoFences layout.nofences",
+                Title = "Export NoFences layout"
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return;
+                try
+                {
+                    LayoutTransferService.Export(dialog.FileName);
+                    MessageBox.Show(this, "The fence layout, settings, and routing rules were exported.", "Export layout", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("Unable to export the NoFences layout.", ex);
+                    MessageBox.Show(this, ex.Message, "Export layout", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void ImportLayout_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new OpenFileDialog
+            {
+                CheckFileExists = true,
+                Filter = "NoFences layout (*.nofences;*.xml)|*.nofences;*.xml",
+                Title = "Import NoFences layout"
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return;
+                try
+                {
+                    NoFencesLayoutPackage package = LayoutTransferService.Read(dialog.FileName);
+                    if (MessageBox.Show(
+                            this,
+                            $"Replace the current layout with {package.Fences.Count} imported fence(s)?\n\nLinked files and folders are never deleted.",
+                            "Import layout",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Question) != DialogResult.Yes)
+                    {
+                        return;
+                    }
+
+                    LayoutTransferService.Import(package);
+                    LoadControlValues();
+                    MessageBox.Show(this, "The layout and settings were imported successfully.", "Import layout", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("Unable to import the NoFences layout.", ex);
+                    MessageBox.Show(this, ex.Message, "Import layout", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         private WinFormsControl BuildBehaviorPage()

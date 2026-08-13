@@ -63,6 +63,16 @@ namespace NoFences.Model
         /// </summary>
         public bool SortDescending { get; set; }
 
+        /// <summary>
+        /// Gets or sets how fence items are presented.
+        /// </summary>
+        public FenceDisplayMode DisplayMode { get; set; } = FenceDisplayMode.Icons;
+
+        /// <summary>
+        /// Gets or sets whether the fence is hidden while the application remains active.
+        /// </summary>
+        public bool Hidden { get; set; }
+
         public List<string> Files { get; set; } = new List<string>();
 
         /// <summary>

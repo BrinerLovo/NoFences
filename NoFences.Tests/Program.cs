@@ -2,6 +2,8 @@ using NoFences.Model;
 using NoFences.History;
 using NoFences.Interaction;
 using NoFences.Layout;
+using NoFences.Routing;
+using NoFences.Transfer;
 using NoFences.Util;
 using System;
 using System.Collections.Generic;
@@ -9,6 +11,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
+using System.Xml.Serialization;
 using WinFormsControl = System.Windows.Forms.Control;
 
 namespace NoFences.Tests
@@ -26,13 +29,17 @@ namespace NoFences.Tests
             Run("same-fence reorder preserves every item", TestReorder);
             Run("batch reorder preserves selection order", TestBatchReorder);
             Run("layout collapses missing entries without deleting metadata", TestMissingEntryLayout);
+            Run("display modes produce compact and detailed rows", TestDisplayModes);
             Run("multi-selection supports toggle and range selection", TestMultiSelection);
             Run("fence sorting supports name, type, date, and custom order", TestSorting);
             Run("undo restores complete item snapshots", TestUndoSnapshots);
             Run("repository isolates and recovers fence metadata", TestRepository);
+            Run("routing rules persist without losing destinations", TestRoutingRuleRepository);
+            Run("layout packages serialize fences, settings, and routes", TestLayoutPackageSerialization);
             Run("collision naming handles files and folders", TestCollisionNaming);
             Run("directory normalization preserves filesystem roots", TestRootPathNormalization);
             Run("physical fence moves are safe and collision-aware", TestPhysicalFenceMoves);
+            Run("folder moves support long Unity-style descendant paths", TestLongPathFolderMove);
             Run("fence folder migration moves files and folders safely", TestFenceFolderMigration);
             Run("fence settings normalization repairs invalid metadata", TestFenceSettingsNormalization);
             Run("folder sync reconciles content and skips metadata", TestFolderSync);
@@ -96,6 +103,7 @@ namespace NoFences.Tests
                     source,
                     FenceSortMode.Custom,
                     false,
+                    FenceDisplayMode.Icons,
                     300,
                     240,
                     35,
@@ -111,6 +119,97 @@ namespace NoFences.Tests
             finally
             {
                 Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestDisplayModes()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string first = Path.Combine(root, "First.txt");
+                string second = Path.Combine(root, "Second.txt");
+                File.WriteAllText(first, "first");
+                File.WriteAllText(second, "second");
+                var layout = new FenceLayout();
+
+                FenceLayoutSnapshot compact = layout.CreateSnapshot(
+                    new[] { first, second }, FenceSortMode.Custom, false, FenceDisplayMode.CompactList,
+                    300, 240, 35, 0);
+                Assert(compact.Items[0].Bounds.Height == FenceLayout.CompactRowHeight,
+                    "Compact mode should use compact rows.");
+                Assert(compact.Items[1].Bounds.Top > compact.Items[0].Bounds.Bottom,
+                    "Compact items should be vertically stacked.");
+
+                FenceLayoutSnapshot details = layout.CreateSnapshot(
+                    new[] { first, second }, FenceSortMode.Custom, false, FenceDisplayMode.Details,
+                    300, 240, 35, 0);
+                Assert(details.Items[0].Bounds.Height == FenceLayout.DetailsRowHeight,
+                    "Details mode should reserve a secondary metadata line.");
+                Assert(details.Items[0].Bounds.Width == 300 - (FenceLayout.ListPadding * 2),
+                    "List modes should use the available fence width.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestRoutingRuleRepository()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                var repository = new RoutingRuleRepository(root);
+                Guid destination = Guid.NewGuid();
+                repository.Save(new[]
+                {
+                    new RoutingRule
+                    {
+                        Name = "PDF documents",
+                        SourceFolder = root,
+                        Extensions = new List<string> { ".pdf" },
+                        DestinationFenceId = destination
+                    }
+                });
+                List<RoutingRule> loaded = repository.Load();
+                Assert(loaded.Count == 1, "One routing rule should be restored.");
+                Assert(loaded[0].DestinationFenceId == destination && loaded[0].Extensions[0] == ".pdf",
+                    "Routing destinations and extensions should round-trip.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestLayoutPackageSerialization()
+        {
+            Guid fenceId = Guid.NewGuid();
+            var package = new NoFencesLayoutPackage
+            {
+                GlobalSettings = new GlobalSettingsSnapshot { SnapSize = 24, OverallOpacity = 0.75 },
+                Fences = new List<FenceInfo>
+                {
+                    new FenceInfo(fenceId) { Name = "Documents", DisplayMode = FenceDisplayMode.Details }
+                },
+                RoutingRules = new List<RoutingRule>
+                {
+                    new RoutingRule { Name = "PDF", DestinationFenceId = fenceId, Extensions = new List<string> { ".pdf" } }
+                }
+            };
+            var serializer = new XmlSerializer(typeof(NoFencesLayoutPackage));
+            using (var stream = new MemoryStream())
+            {
+                serializer.Serialize(stream, package);
+                stream.Position = 0;
+                var restored = (NoFencesLayoutPackage)serializer.Deserialize(stream);
+                Assert(restored.FormatVersion == 1 && restored.Fences.Count == 1 && restored.RoutingRules.Count == 1,
+                    "Layout package contents should round-trip.");
+                Assert(restored.Fences[0].DisplayMode == FenceDisplayMode.Details,
+                    "Per-fence display mode should be exported.");
+                Assert(restored.RoutingRules[0].DestinationFenceId == fenceId,
+                    "Routing destinations should remain linked to imported fences.");
             }
         }
 
@@ -331,6 +430,35 @@ namespace NoFences.Tests
             {
                 Directory.Delete(sourceRoot, true);
                 Directory.Delete(fenceRoot, true);
+            }
+        }
+
+        private static void TestLongPathFolderMove()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string source = Path.Combine(root, "Project");
+                string nested = source;
+                while (nested.Length < 220)
+                {
+                    nested = Path.Combine(nested, "CachePart");
+                    Directory.CreateDirectory(nested);
+                }
+                string sourceFile = Path.Combine(nested, "cache.bin");
+                File.WriteAllText(sourceFile, "cache");
+
+                string destination = Path.Combine(root, new string('D', 80));
+                Assert(FenceFileMover.TryMove(source, destination, out string movedPath, out string error),
+                    "A long-path-aware folder move should succeed: " + error);
+                Assert(Directory.Exists(movedPath), "The long-path project should exist in the destination.");
+                Directory.Move(movedPath, source);
+                Assert(File.Exists(sourceFile),
+                    "Long descendant content should remain intact after the move.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
             }
         }
 

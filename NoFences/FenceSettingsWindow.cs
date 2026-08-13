@@ -29,6 +29,7 @@ namespace NoFences
         private readonly NumericUpDown titleHeightInput;
         private readonly ComboBox sortModeInput;
         private readonly CheckBox sortDescendingCheckBox;
+        private readonly ComboBox displayModeInput;
 
         public FenceSettingsWindow(FenceInfo fenceInfo, string effectiveFolderPath)
         {
@@ -81,16 +82,7 @@ namespace NoFences
             extensionsInput = CreateTextBox(string.Join(", ", fenceInfo.WatchedExtensions ?? new List<string>()));
             lockedCheckBox = CreateCheckBox("Lock position and size", fenceInfo.Locked);
             autoSyncCheckBox = CreateCheckBox("Automatically sync changes from the linked folder", fenceInfo.AutoSyncFolder);
-            sortModeInput = new ComboBox
-            {
-                BackColor = Color.FromArgb(36, 36, 36),
-                DrawMode = DrawMode.OwnerDrawFixed,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = PrimaryText,
-                Height = 30,
-                ItemHeight = 24
-            };
+            sortModeInput = CreateDarkComboBox();
             sortModeInput.Items.AddRange(new object[]
             {
                 "Custom order",
@@ -99,8 +91,15 @@ namespace NoFences
                 "Date modified"
             });
             sortModeInput.SelectedIndex = (int)fenceInfo.SortMode;
-            sortModeInput.DrawItem += SortModeInput_DrawItem;
             sortDescendingCheckBox = CreateCheckBox("Reverse sort order", fenceInfo.SortDescending);
+            displayModeInput = CreateDarkComboBox();
+            displayModeInput.Items.AddRange(new object[]
+            {
+                "Icons",
+                "Compact list",
+                "Details"
+            });
+            displayModeInput.SelectedIndex = (int)fenceInfo.DisplayMode;
             inheritMinifyCheckBox = CreateCheckBox("Use global auto-minify setting", fenceInfo.UseGlobalAutoMinify);
             autoMinifyCheckBox = CreateCheckBox("Auto-minify this fence", fenceInfo.CanMinify);
             inheritTitleCheckBox = CreateCheckBox("Use global title height", fenceInfo.UseGlobalTitleHeight);
@@ -142,6 +141,7 @@ namespace NoFences
                 lockedCheckBox,
                 inheritMinifyCheckBox,
                 autoMinifyCheckBox,
+                CreateLabeledRow("Display mode", displayModeInput),
                 CreateLabeledRow("Item order", sortModeInput),
                 sortDescendingCheckBox,
                 CreateHint("Manual drag-and-drop reordering is available only with Custom order.")));
@@ -188,6 +188,7 @@ namespace NoFences
         public int TitleHeight => (int)titleHeightInput.Value;
         public FenceSortMode SortMode => (FenceSortMode)Math.Max(0, sortModeInput.SelectedIndex);
         public bool SortDescending => sortDescendingCheckBox.Checked;
+        public FenceDisplayMode DisplayMode => (FenceDisplayMode)Math.Max(0, displayModeInput.SelectedIndex);
         public List<string> WatchedExtensions => SettingsValidator.NormalizeExtensions(
             extensionsInput.Text.Split(
                 new[] { ',', ';', ' ', '\r', '\n', '\t' },
@@ -247,6 +248,22 @@ namespace NoFences
                 new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
                 PrimaryText,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        private static ComboBox CreateDarkComboBox()
+        {
+            var comboBox = new ComboBox
+            {
+                BackColor = Color.FromArgb(36, 36, 36),
+                DrawMode = DrawMode.OwnerDrawFixed,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = PrimaryText,
+                Height = 30,
+                ItemHeight = 24
+            };
+            comboBox.DrawItem += SortModeInput_DrawItem;
+            return comboBox;
         }
 
         private static Panel CreateSection(string title, string description, params WinFormsControl[] controls)

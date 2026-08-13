@@ -28,7 +28,8 @@ namespace NoFences.Model
                 {
                     var window = new FenceWindow(fenceInfo);
                     Fences.Add(window);
-                    window.Show();
+                    if (!fenceInfo.Hidden)
+                        window.Show();
                 }
                 catch (Exception ex)
                 {
@@ -65,6 +66,81 @@ namespace NoFences.Model
             var window = new FenceWindow(fenceInfo);
             AddNewFence(window);
             window.Show();
+        }
+
+        public void SetAllVisible(bool visible)
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].SetFenceVisible(visible);
+        }
+
+        public void SetAllLocked(bool locked)
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].SetFenceLocked(locked);
+        }
+
+        public void SyncAll()
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].SyncFromTray(showResult: false);
+        }
+
+        public void RefreshAllSettings()
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].RefreshSettings();
+        }
+
+        public void CloseAll()
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].Close();
+        }
+
+        public FenceWindow FindFence(Guid fenceId)
+        {
+            return Fences.Find(window => window.FenceId == fenceId);
+        }
+
+        public IReadOnlyList<FenceInfo> GetSavedFenceInfos()
+        {
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].FlushPendingSaves();
+            return repository.LoadAll();
+        }
+
+        public void ReplaceFences(IEnumerable<FenceInfo> importedFences)
+        {
+            IReadOnlyList<FenceInfo> existing = repository.LoadAll();
+            FenceWindow[] windows = Fences.ToArray();
+            for (int index = 0; index < windows.Length; index++)
+                windows[index].Close();
+            for (int index = 0; index < existing.Count; index++)
+                repository.Delete(existing[index]);
+
+            var importedIds = new HashSet<Guid>();
+            foreach (FenceInfo info in importedFences ?? Array.Empty<FenceInfo>())
+            {
+                if (info == null)
+                    continue;
+                if (info.Id == Guid.Empty)
+                    info.Id = Guid.NewGuid();
+                if (!importedIds.Add(info.Id))
+                    continue;
+                SettingsValidator.NormalizeFence(info);
+                repository.Save(info);
+                var window = new FenceWindow(info);
+                Fences.Add(window);
+                if (!info.Hidden)
+                    window.Show();
+            }
         }
 
         public void RemoveFence(FenceInfo info, FenceWindow window)

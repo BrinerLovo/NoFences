@@ -245,8 +245,10 @@ namespace NoFences
                 || fenceInfo.SortDescending != dialog.SortDescending;
             fenceInfo.SortMode = dialog.SortMode;
             fenceInfo.SortDescending = dialog.SortMode != FenceSortMode.Custom && dialog.SortDescending;
+            bool displayModeChanged = fenceInfo.DisplayMode != dialog.DisplayMode;
+            fenceInfo.DisplayMode = dialog.DisplayMode;
 
-            if (sortChanged)
+            if (sortChanged || displayModeChanged)
                 dragDropController.ClearSelection();
 
             Text = fenceInfo.Name;

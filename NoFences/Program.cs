@@ -37,10 +37,11 @@ namespace NoFences
                 AppLogger.Info("NoFences started.");
 
                 FenceManager.Instance.LoadFences();
-                if (Application.OpenForms.Count == 0)
+                if (FenceManager.Instance.Fences.Count == 0)
                     FenceManager.Instance.CreateFence("First fence");
 
-                Application.Run();
+                using (var applicationContext = new NoFencesApplicationContext())
+                    Application.Run(applicationContext);
             }
         }
 

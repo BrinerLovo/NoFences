@@ -25,17 +25,20 @@ namespace NoFences.Layout
         public FenceLayoutSnapshot(
             IReadOnlyList<string> orderedPaths,
             IReadOnlyList<FenceLayoutItem> items,
+            FenceDisplayMode displayMode,
             int scrollHeight,
             int totalHeight)
         {
             OrderedPaths = orderedPaths;
             Items = items;
+            DisplayMode = displayMode;
             ScrollHeight = scrollHeight;
             TotalHeight = totalHeight;
         }
 
         public IReadOnlyList<string> OrderedPaths { get; }
         public IReadOnlyList<FenceLayoutItem> Items { get; }
+        public FenceDisplayMode DisplayMode { get; }
         public int ScrollHeight { get; }
         public int TotalHeight { get; }
 
@@ -54,6 +57,13 @@ namespace NoFences.Layout
             for (int index = 0; index < Items.Count; index++)
             {
                 Rectangle bounds = Items[index].Bounds;
+                if (DisplayMode != FenceDisplayMode.Icons)
+                {
+                    if (point.Y < bounds.Top + bounds.Height / 2)
+                        return index;
+                    continue;
+                }
+
                 if (point.Y < bounds.Top + bounds.Height / 2
                     || (point.Y < bounds.Bottom && point.X < bounds.Left + bounds.Width / 2))
                 {
@@ -71,6 +81,9 @@ namespace NoFences.Layout
         public const int TextHeight = 35;
         public const int ItemPadding = 15;
         public const int ItemHeight = IconHeight + ItemPadding + TextHeight;
+        public const int ListPadding = 8;
+        public const int CompactRowHeight = 32;
+        public const int DetailsRowHeight = 44;
 
         private readonly List<string> sourcePaths = new List<string>();
         private FenceLayoutSnapshot cachedSnapshot;
@@ -80,11 +93,13 @@ namespace NoFences.Layout
         private int cachedHeight;
         private int cachedTitleHeight;
         private int cachedScrollOffset;
+        private FenceDisplayMode cachedDisplayMode;
 
         public FenceLayoutSnapshot CreateSnapshot(
             IReadOnlyList<string> paths,
             FenceSortMode sortMode,
             bool descending,
+            FenceDisplayMode displayMode,
             int width,
             int height,
             int titleHeight,
@@ -93,6 +108,7 @@ namespace NoFences.Layout
             if (cachedSnapshot != null
                 && cachedSortMode == sortMode
                 && cachedDescending == descending
+                && cachedDisplayMode == displayMode
                 && cachedWidth == width
                 && cachedHeight == height
                 && cachedTitleHeight == titleHeight
@@ -116,24 +132,31 @@ namespace NoFences.Layout
 
             List<string> orderedPaths = GetOrderedPaths(renderablePaths, sortMode, descending);
             var items = new List<FenceLayoutItem>(orderedPaths.Count);
-            int x = ItemPadding;
-            int y = ItemPadding;
+            int x = displayMode == FenceDisplayMode.Icons ? ItemPadding : ListPadding;
+            int y = x;
             int contentBottom = 0;
             for (int index = 0; index < orderedPaths.Count; index++)
             {
-                var bounds = new Rectangle(
-                    x,
-                    y + titleHeight - scrollOffset,
-                    ItemWidth,
-                    ItemHeight);
+                int itemWidth = displayMode == FenceDisplayMode.Icons
+                    ? ItemWidth
+                    : Math.Max(1, width - (ListPadding * 2));
+                int itemHeight = GetItemHeight(displayMode);
+                var bounds = new Rectangle(x, y + titleHeight - scrollOffset, itemWidth, itemHeight);
                 items.Add(new FenceLayoutItem(orderedPaths[index], bounds));
-                contentBottom = Math.Max(contentBottom, y + ItemHeight);
+                contentBottom = Math.Max(contentBottom, y + itemHeight);
 
-                x += ItemWidth + ItemPadding;
-                if (x + ItemWidth > width)
+                if (displayMode == FenceDisplayMode.Icons)
                 {
-                    x = ItemPadding;
-                    y += ItemHeight + ItemPadding;
+                    x += ItemWidth + ItemPadding;
+                    if (x + ItemWidth > width)
+                    {
+                        x = ItemPadding;
+                        y += ItemHeight + ItemPadding;
+                    }
+                }
+                else
+                {
+                    y += itemHeight + 4;
                 }
             }
 
@@ -142,10 +165,12 @@ namespace NoFences.Layout
             cachedSnapshot = new FenceLayoutSnapshot(
                 orderedPaths,
                 items,
+                displayMode,
                 scrollHeight,
                 contentBottom + titleHeight);
             cachedSortMode = sortMode;
             cachedDescending = descending;
+            cachedDisplayMode = displayMode;
             cachedWidth = width;
             cachedHeight = height;
             cachedTitleHeight = titleHeight;
@@ -156,6 +181,19 @@ namespace NoFences.Layout
         public void Invalidate()
         {
             cachedSnapshot = null;
+        }
+
+        private static int GetItemHeight(FenceDisplayMode displayMode)
+        {
+            switch (displayMode)
+            {
+                case FenceDisplayMode.CompactList:
+                    return CompactRowHeight;
+                case FenceDisplayMode.Details:
+                    return DetailsRowHeight;
+                default:
+                    return ItemHeight;
+            }
         }
 
         internal static List<string> GetOrderedPaths(

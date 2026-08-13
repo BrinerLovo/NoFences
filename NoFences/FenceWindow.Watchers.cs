@@ -1,4 +1,5 @@
 using NoFences.Util;
+using NoFences.Routing;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -81,6 +82,9 @@ namespace NoFences
 
         private void OptimizedDesktopItemCreated(object sender, FileSystemEventArgs e)
         {
+            if (RoutingRuleManager.Instance.HasMatchingRule(e.FullPath))
+                return;
+
             string extension = Path.GetExtension(e.FullPath);
             bool watchedFile = fenceInfo.WatchedExtensions != null
                 && fenceInfo.WatchedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
