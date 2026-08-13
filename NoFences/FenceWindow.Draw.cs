@@ -246,6 +246,12 @@ namespace NoFences
 
         public void SetOverallOpacity(double opacity)
         {
+            if (Properties.Settings.Default.reduceAnimations)
+            {
+                Opacity = opacity;
+                return;
+            }
+
             if (opacityFader == null)
                 opacityFader = new Fader(0.22f);
 

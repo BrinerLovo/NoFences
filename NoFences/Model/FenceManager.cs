@@ -1,3 +1,4 @@
+using NoFences.Util;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -20,6 +21,8 @@ namespace NoFences.Model
 
         public List<FenceWindow> Fences { get; } = new List<FenceWindow>();
 
+        public string DataDirectoryPath => basePath;
+
         private FenceManager()
         {
             basePath = Path.Combine(
@@ -33,10 +36,28 @@ namespace NoFences.Model
 
         public void LoadFences()
         {
-            MigrateLegacyMetadata();
+            try
+            {
+                MigrateLegacyMetadata();
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                AppLogger.Error("Unable to migrate legacy fence metadata.", ex);
+            }
 
             var loadedIds = new HashSet<Guid>();
-            foreach (string metadataDirectory in Directory.EnumerateDirectories(metadataRootPath))
+            string[] metadataDirectories;
+            try
+            {
+                metadataDirectories = Directory.GetDirectories(metadataRootPath);
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                AppLogger.Error("Unable to enumerate fence metadata.", ex);
+                return;
+            }
+
+            foreach (string metadataDirectory in metadataDirectories)
             {
                 FenceInfo fenceInfo = LoadFenceMetadata(metadataDirectory);
                 if (fenceInfo == null || fenceInfo.Id == Guid.Empty || !loadedIds.Add(fenceInfo.Id))
@@ -44,13 +65,14 @@ namespace NoFences.Model
 
                 try
                 {
+                    SettingsValidator.NormalizeFence(fenceInfo);
                     var window = new FenceWindow(fenceInfo);
                     Fences.Add(window);
                     window.Show();
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Unable to load fence '{fenceInfo.Name}': {ex}");
+                    AppLogger.Error($"Unable to load fence '{fenceInfo.Name}'.", ex);
                 }
             }
         }
@@ -77,6 +99,7 @@ namespace NoFences.Model
                 Height = 300,
                 Width = 300
             };
+            SettingsValidator.NormalizeFence(fenceInfo);
 
             UpdateFence(fenceInfo);
             var window = new FenceWindow(fenceInfo);
@@ -123,6 +146,8 @@ namespace NoFences.Model
             if (fenceInfo.Id == Guid.Empty)
                 throw new InvalidOperationException("Fence metadata must have a stable identifier.");
 
+            SettingsValidator.NormalizeFence(fenceInfo);
+
             lock (persistenceLock)
             {
                 string metadataDirectory = GetMetadataDirectoryPath(fenceInfo.Id);
@@ -142,6 +167,13 @@ namespace NoFences.Model
                 : Path.Combine(basePath, fenceInfo.Id.ToString("D"));
         }
 
+        public string GetDefaultContentFolderPath(Guid fenceId)
+        {
+            if (fenceId == Guid.Empty)
+                throw new ArgumentException("A fence identifier is required.", nameof(fenceId));
+            return Path.Combine(basePath, fenceId.ToString("D"));
+        }
+
         private string GetMetadataDirectoryPath(Guid fenceId)
         {
             return Path.Combine(metadataRootPath, fenceId.ToString("D"));
@@ -157,9 +189,24 @@ namespace NoFences.Model
             string backupPath = primaryPath + ".bak";
             fenceInfo = DeserializeFence(backupPath);
             if (fenceInfo != null)
-                Debug.WriteLine($"Recovered fence metadata from backup: {backupPath}");
+            {
+                AppLogger.Info($"Recovered fence metadata from backup: {backupPath}");
+                TryRestorePrimaryMetadata(backupPath, primaryPath);
+            }
 
             return fenceInfo;
+        }
+
+        private static void TryRestorePrimaryMetadata(string backupPath, string primaryPath)
+        {
+            try
+            {
+                File.Copy(backupPath, primaryPath, true);
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                AppLogger.Error("Unable to repair primary fence metadata from backup.", ex);
+            }
         }
 
         private static FenceInfo DeserializeFence(string path)
@@ -281,6 +328,14 @@ namespace NoFences.Model
             {
                 Debug.WriteLine($"Unable to delete metadata file '{path}': {ex.Message}");
             }
+        }
+
+        private static bool IsFileSystemException(Exception exception)
+        {
+            return exception is IOException
+                || exception is UnauthorizedAccessException
+                || exception is ArgumentException
+                || exception is NotSupportedException;
         }
     }
 }

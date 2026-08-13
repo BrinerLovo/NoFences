@@ -23,10 +23,8 @@ namespace NoFences.Util
 
             try
             {
-                string source = Path.GetFullPath(sourcePath)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string destinationFolder = Path.GetFullPath(destinationDirectory)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string source = PathUtil.NormalizeDirectoryPath(sourcePath);
+                string destinationFolder = PathUtil.NormalizeDirectoryPath(destinationDirectory);
                 bool isDirectory = Directory.Exists(source);
 
                 if (!isDirectory && !File.Exists(source))

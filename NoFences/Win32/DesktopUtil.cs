@@ -33,6 +33,9 @@ namespace NoFences.Win32
         [DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
 
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr windowHandle, int command);
+
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
@@ -76,6 +79,52 @@ namespace NoFences.Win32
             IntPtr nWinHandle = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "Progman", null);
             SetWindowLongPtr(handle, GWL_HWNDPARENT, nWinHandle.ToInt32());
 
+        }
+
+        public static bool TrySetDesktopIconsVisible(bool visible, out string errorMessage)
+        {
+            errorMessage = null;
+            try
+            {
+                IntPtr desktopView = FindWindowEx(
+                    FindWindow("Progman", null),
+                    IntPtr.Zero,
+                    "SHELLDLL_DefView",
+                    null);
+
+                IntPtr worker = IntPtr.Zero;
+                while (desktopView == IntPtr.Zero)
+                {
+                    worker = FindWindowEx(IntPtr.Zero, worker, "WorkerW", null);
+                    if (worker == IntPtr.Zero)
+                        break;
+
+                    desktopView = FindWindowEx(worker, IntPtr.Zero, "SHELLDLL_DefView", null);
+                }
+
+                if (desktopView == IntPtr.Zero)
+                {
+                    errorMessage = "Windows Desktop view was not found.";
+                    return false;
+                }
+
+                IntPtr iconList = FindWindowEx(desktopView, IntPtr.Zero, "SysListView32", "FolderView");
+                if (iconList == IntPtr.Zero)
+                {
+                    errorMessage = "Windows Desktop icon list was not found.";
+                    return false;
+                }
+
+                // ShowWindow returns the previous visibility state, not whether
+                // the requested state was applied.
+                ShowWindow(iconList, visible ? 5 : 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
         }
 
         public static Point GetClosestSnappedPosition(Point cursorPosition)

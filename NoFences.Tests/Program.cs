@@ -2,7 +2,11 @@ using NoFences.Model;
 using NoFences.Util;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Windows.Forms;
+using WinFormsControl = System.Windows.Forms.Control;
 
 namespace NoFences.Tests
 {
@@ -10,11 +14,18 @@ namespace NoFences.Tests
     {
         private static int failures;
 
-        private static int Main()
+        [STAThread]
+        private static int Main(string[] args)
         {
+            if (args.Length == 2 && string.Equals(args[0], "--render-settings", StringComparison.OrdinalIgnoreCase))
+                return RenderSettingsPreviews(args[1]);
+
             Run("same-fence reorder preserves every item", TestReorder);
             Run("collision naming handles files and folders", TestCollisionNaming);
+            Run("directory normalization preserves filesystem roots", TestRootPathNormalization);
             Run("physical fence moves are safe and collision-aware", TestPhysicalFenceMoves);
+            Run("fence folder migration moves files and folders safely", TestFenceFolderMigration);
+            Run("fence settings normalization repairs invalid metadata", TestFenceSettingsNormalization);
             Run("folder sync reconciles content and skips metadata", TestFolderSync);
             Run("corrupt metadata recovers from atomic backup", TestMetadataBackupRecovery);
             Run("fence deletion preserves linked content", TestNonDestructiveFenceDeletion);
@@ -59,6 +70,12 @@ namespace NoFences.Tests
             }
         }
 
+        private static void TestRootPathNormalization()
+        {
+            string root = Path.GetPathRoot(Path.GetFullPath(Path.GetTempPath()));
+            Assert(PathUtil.NormalizeDirectoryPath(root) == root, "A drive root must not become drive-relative.");
+        }
+
         private static void TestFolderSync()
         {
             string root = CreateTemporaryDirectory();
@@ -92,6 +109,39 @@ namespace NoFences.Tests
             {
                 Directory.Delete(root, true);
                 Directory.Delete(externalRoot, true);
+            }
+        }
+
+        private static void TestFenceFolderMigration()
+        {
+            string sourceRoot = CreateTemporaryDirectory();
+            string destinationRoot = CreateTemporaryDirectory();
+            try
+            {
+                string sourceFile = Path.Combine(sourceRoot, "Item.txt");
+                string sourceFolder = Path.Combine(sourceRoot, "Folder");
+                string metadata = Path.Combine(sourceRoot, "__fence_metadata.xml");
+                File.WriteAllText(sourceFile, "source");
+                Directory.CreateDirectory(sourceFolder);
+                File.WriteAllText(Path.Combine(sourceFolder, "Nested.txt"), "nested");
+                File.WriteAllText(metadata, "metadata");
+                File.WriteAllText(Path.Combine(destinationRoot, "Item.txt"), "existing");
+
+                Assert(FenceFolderMigration.TryMoveContents(
+                        sourceRoot,
+                        destinationRoot,
+                        out FenceFolderMigrationResult result,
+                        out _),
+                    "Folder migration should succeed.");
+                Assert(result.MovedPaths.Count == 2, "Migration should move the ordinary file and folder.");
+                Assert(File.Exists(Path.Combine(destinationRoot, "Item (2).txt")), "Migration should resolve file collisions.");
+                Assert(Directory.Exists(Path.Combine(destinationRoot, "Folder")), "Migration should move subfolders.");
+                Assert(File.Exists(metadata), "Migration should leave legacy metadata behind.");
+            }
+            finally
+            {
+                Directory.Delete(sourceRoot, true);
+                Directory.Delete(destinationRoot, true);
             }
         }
 
@@ -174,6 +224,8 @@ namespace NoFences.Tests
                 FenceInfo recovered = FenceManager.LoadFenceMetadata(metadataDirectory);
                 Assert(recovered != null, "Backup recovery should return metadata.");
                 Assert(recovered.Name == "Original", "Recovery should use the last valid backup.");
+                Assert(FenceManager.LoadFenceMetadata(metadataDirectory)?.Name == "Original",
+                    "Backup recovery should repair the primary metadata file.");
             }
             finally
             {
@@ -186,6 +238,27 @@ namespace NoFences.Tests
         {
             Assert(ThumbnailProvider.GetScaledSize(400, 200, 32, 32) == new System.Drawing.Size(32, 16), "Wide image scaling failed.");
             Assert(ThumbnailProvider.GetScaledSize(200, 400, 32, 32) == new System.Drawing.Size(16, 32), "Tall image scaling failed.");
+        }
+
+        private static void TestFenceSettingsNormalization()
+        {
+            var info = new FenceInfo(Guid.NewGuid())
+            {
+                Name = "   ",
+                Width = -20,
+                Height = 0,
+                TitleHeight = 500,
+                Files = new List<string> { " A ", "a", null, "" },
+                WatchedExtensions = new List<string> { "PDF", ".pdf", " zip " }
+            };
+
+            SettingsValidator.NormalizeFence(info);
+            Assert(info.Name == "Fence", "An empty fence name should receive a safe default.");
+            Assert(info.Width >= SettingsValidator.MinimumFenceWidth, "Fence width should be clamped.");
+            Assert(info.Height >= SettingsValidator.MinimumFenceHeight, "Fence height should be clamped.");
+            Assert(info.TitleHeight == SettingsValidator.MaximumTitleHeight, "Title height should be clamped.");
+            Assert(info.Files.Count == 1 && info.Files[0] == "A", "Fence paths should be trimmed and de-duplicated.");
+            AssertSequence(info.WatchedExtensions, ".PDF", ".zip");
         }
 
         private static string CreateTemporaryDirectory()
@@ -220,6 +293,73 @@ namespace NoFences.Tests
             Assert(actual.Count == expected.Length, "Sequence length differs.");
             for (int index = 0; index < expected.Length; index++)
                 Assert(actual[index] == expected[index], $"Unexpected item at index {index}.");
+        }
+
+        private static int RenderSettingsPreviews(string outputDirectory)
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Directory.CreateDirectory(outputDirectory);
+
+            using (var globalSettings = new SettingsWindow())
+            {
+                globalSettings.Show();
+                Application.DoEvents();
+                SaveFormPreview(globalSettings, Path.Combine(outputDirectory, "global-settings.png"));
+                ListBox navigation = FindControl<ListBox>(globalSettings);
+                navigation.SelectedIndex = 1;
+                Application.DoEvents();
+                SaveFormPreview(globalSettings, Path.Combine(outputDirectory, "global-settings-behavior.png"));
+                navigation.SelectedIndex = 2;
+                Application.DoEvents();
+                SaveFormPreview(globalSettings, Path.Combine(outputDirectory, "global-settings-appearance.png"));
+                globalSettings.Close();
+            }
+
+            var fenceInfo = new FenceInfo(Guid.NewGuid())
+            {
+                Name = "Projects",
+                Width = 320,
+                Height = 300,
+                WatchedExtensions = new List<string> { ".pdf", ".zip" }
+            };
+            using (var fenceSettings = new FenceSettingsWindow(fenceInfo, Path.Combine(outputDirectory, "Projects")))
+            {
+                fenceSettings.Show();
+                Application.DoEvents();
+                SaveFormPreview(fenceSettings, Path.Combine(outputDirectory, "fence-settings.png"));
+                FlowLayoutPanel scroller = FindControl<FlowLayoutPanel>(fenceSettings);
+                scroller.AutoScrollPosition = new Point(0, 420);
+                Application.DoEvents();
+                SaveFormPreview(fenceSettings, Path.Combine(outputDirectory, "fence-settings-lower.png"));
+                fenceSettings.Close();
+            }
+
+            return 0;
+        }
+
+        private static void SaveFormPreview(Form form, string outputPath)
+        {
+            using (var bitmap = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(outputPath, ImageFormat.Png);
+            }
+        }
+
+        private static T FindControl<T>(WinFormsControl root) where T : WinFormsControl
+        {
+            if (root is T match)
+                return match;
+
+            foreach (WinFormsControl child in root.Controls)
+            {
+                T nested = FindControl<T>(child);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
         }
     }
 }

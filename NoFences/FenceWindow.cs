@@ -104,6 +104,8 @@ namespace NoFences
         {
             InitializeComponent();
             this.fenceInfo = fenceInfo ?? throw new ArgumentNullException(nameof(fenceInfo));
+            SettingsValidator.NormalizeFence(this.fenceInfo);
+            FencePlacement.EnsureVisible(this.fenceInfo);
             InitializeFenceCommands();
             DropShadow.ApplyShadows(this);
             BlurUtil.EnableBlur(Handle, 50);
@@ -111,7 +113,10 @@ namespace NoFences
             DesktopUtil.GlueToDesktop(Handle);
             //DesktopUtil.PreventMinimize(Handle);
 
-            fenceInfo.TitleHeight = Properties.Settings.Default.title_size;
+            if (fenceInfo.UseGlobalTitleHeight)
+                fenceInfo.TitleHeight = Properties.Settings.Default.title_size;
+            if (fenceInfo.UseGlobalAutoMinify)
+                fenceInfo.CanMinify = Properties.Settings.Default.autoMinify;
             logicalTitleHeight = fenceInfo.TitleHeight;
             titleHeight = LogicalToDeviceUnits(logicalTitleHeight);
             if (fenceInfo.Folded) state = FenceState.Minified;
@@ -411,6 +416,23 @@ namespace NoFences
             }
         }
 
+        private void StartResizeTransition(Size destinationSize)
+        {
+            targetSize = destinationSize;
+            if (Properties.Settings.Default.reduceAnimations)
+            {
+                resizeTimer.Stop();
+                isAnimating = false;
+                Size = targetSize;
+                Invalidate();
+                return;
+            }
+
+            startSize = Size;
+            animationProgress = 0;
+            resizeTimer.Start();
+        }
+
         private void FenceWindow_MouseMove(object sender, MouseEventArgs e)
         {
             if (isDraggingWindow)
@@ -518,7 +540,7 @@ namespace NoFences
                         // File was moved outside the fence - remove it from our list
                         fenceInfo.Files.Remove(dragStartItem);
                         Save();
-                        Console.WriteLine($"File moved out of fence: {dragStartItem}");
+                        System.Diagnostics.Debug.WriteLine($"File moved out of fence: {dragStartItem}");
                     }
                     
                     // Reset drag state
@@ -652,19 +674,15 @@ namespace NoFences
                 state = FenceState.Normal;
                 // Height = fenceInfo.Height;
 
-                targetSize = new Size(Width, fenceInfo.Height);
-                startSize = this.Size;
-                animationProgress = 0; // Reset progress
-                resizeTimer.Start();
+                StartResizeTransition(new Size(Width, fenceInfo.Height));
             }
             else if (scrollHeight > 0)
             {
                 state = FenceState.Maximized;
                 // Height = Math.Min(Screen.PrimaryScreen.WorkingArea.Height, totalHeight + 10); // Expand but don't exceed screen
-                targetSize = new Size(Width, Math.Min(Screen.PrimaryScreen.WorkingArea.Height, totalHeight + 10));
-                startSize = this.Size;
-                animationProgress = 0; // Reset progress
-                resizeTimer.Start();
+                StartResizeTransition(new Size(
+                    Width,
+                    Math.Min(Screen.PrimaryScreen.WorkingArea.Height, totalHeight + 10)));
             }
         }
 
@@ -791,9 +809,7 @@ namespace NoFences
                 // Height = fenceInfo.Height;
             }
 
-            startSize = this.Size;
-            animationProgress = 0; // Reset progress
-            resizeTimer.Start();
+            StartResizeTransition(targetSize);
 
             // Save();
         }
@@ -837,6 +853,9 @@ namespace NoFences
 
             // Update menu item states based on current fence configuration
             bool hasWatchedExtensions = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Count > 0;
+            bool hasCustomFolder = !string.IsNullOrWhiteSpace(fenceInfo.CustomFolderPath);
+            clearCustomFolderPathToolStripMenuItem.Enabled = hasCustomFolder;
+            clearCustomFolderPathToolStripMenuItemDark.Enabled = hasCustomFolder;
             
             // Enable/disable scan button based on whether we have watched extensions
             if (sender == appContextMenu)
@@ -860,14 +879,16 @@ namespace NoFences
 
         private void deleteItemToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var result = MessageBox.Show(
-                $"Remove fence '{Text}'?\n\nThe linked folder and all of its files will be kept.",
-                "Delete Fence", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (result == DialogResult.Yes)
-            {
-                deleteFenceOnClose = true;
-                Close();
-            }
+            if (Properties.Settings.Default.confirmFenceDeletion
+                && MessageBox.Show(
+                    $"Remove fence '{Text}'?\n\nThe linked folder and all of its files will be kept.",
+                    "Delete Fence",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            deleteFenceOnClose = true;
+            Close();
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
@@ -892,7 +913,7 @@ namespace NoFences
 
             if (e.KeyCode == Keys.Delete && selectedItem != null && !lockedToolStripMenuItem.Checked)
             {
-                Console.WriteLine($"Delete key pressed for selected item: {selectedItem}");
+                System.Diagnostics.Debug.WriteLine($"Delete key pressed for selected item: {selectedItem}");
                 RemoveSelectedItem();
                 e.Handled = true;
             }
@@ -986,7 +1007,7 @@ namespace NoFences
             {
                 MessageBox.Show($"Error scanning for items: {ex.Message}", 
                     "Scan Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Console.WriteLine($"Error in ScanForWatchedItems: {ex.Message}");
+                AppLogger.Error("Unable to scan the desktop for watched items.", ex);
             }
         }
 
@@ -1013,7 +1034,7 @@ namespace NoFences
                 catch (Exception ex)
                 {
                     errors.Add($"{Path.GetFileName(item)}: {ex.Message}");
-                    Console.WriteLine($"Failed to move item {item}: {ex.Message}");
+                    AppLogger.Error($"Unable to move watched item '{item}'.", ex);
                 }
             }
 

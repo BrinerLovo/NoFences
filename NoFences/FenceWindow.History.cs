@@ -74,10 +74,14 @@ namespace NoFences
             };
             undoItem.Click += undoToolStripMenuItem_Click;
 
+            var fenceSettingsItem = new ToolStripMenuItem("Fence settings…");
+            fenceSettingsItem.Click += fenceSettingsToolStripMenuItem_Click;
+
             menu.Items.Insert(0, openFolderItem);
             menu.Items.Insert(1, syncItem);
             menu.Items.Insert(2, undoItem);
-            menu.Items.Insert(3, new ToolStripSeparator());
+            menu.Items.Insert(3, fenceSettingsItem);
+            menu.Items.Insert(4, new ToolStripSeparator());
         }
 
         private void RecordReorderUndo(string path, int originalIndex)

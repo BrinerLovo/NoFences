@@ -34,9 +34,24 @@ namespace NoFences.Model
         public bool CanMinify { get; set; }
 
         /// <summary>
+        /// Gets or sets whether this fence inherits the global auto-minify setting.
+        /// </summary>
+        public bool UseGlobalAutoMinify { get; set; } = true;
+
+        /// <summary>
         /// Gets or sets the logical window title height.
         /// </summary>
         public int TitleHeight { get; set; } = 35;
+
+        /// <summary>
+        /// Gets or sets whether this fence inherits the global title height.
+        /// </summary>
+        public bool UseGlobalTitleHeight { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets whether changes in the linked folder are reflected automatically.
+        /// </summary>
+        public bool AutoSyncFolder { get; set; } = true;
 
         public List<string> Files { get; set; } = new List<string>();
 

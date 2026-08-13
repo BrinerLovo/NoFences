@@ -154,5 +154,29 @@ namespace NoFences.Properties {
                 this["overallOpacity"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool confirmFenceDeletion {
+            get { return ((bool)(this["confirmFenceDeletion"])); }
+            set { this["confirmFenceDeletion"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool enableFileWatchers {
+            get { return ((bool)(this["enableFileWatchers"])); }
+            set { this["enableFileWatchers"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool reduceAnimations {
+            get { return ((bool)(this["reduceAnimations"])); }
+            set { this["reduceAnimations"] = value; }
+        }
     }
 }

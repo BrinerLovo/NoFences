@@ -31,7 +31,7 @@ namespace NoFences.Model
                 return new FenceEntry(path, EntryType.Folder);
             else 
             {
-                Console.WriteLine($"FenceEntry.FromPath: Path does not exist: {path}");
+                System.Diagnostics.Debug.WriteLine($"Fence entry path does not exist: {path}");
                 return null;
             }
         }
@@ -81,7 +81,7 @@ namespace NoFences.Model
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Failed to start: {e}");
+                    AppLogger.Error($"Unable to open fence item '{Path}'.", e);
                 }
             });
         }

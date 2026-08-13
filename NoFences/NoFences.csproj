@@ -97,6 +97,9 @@
     <Compile Include="FenceWindow.Watchers.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="FenceSettingsWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="HeightDialog.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -123,13 +126,17 @@
       <DependentUpon>SettingsWindow.cs</DependentUpon>
     </Compile>
     <Compile Include="Util\AppSettings.cs" />
+    <Compile Include="Util\AppLogger.cs" />
     <Compile Include="Util\Extensions.cs" />
     <Compile Include="Util\FenceFileMover.cs" />
+    <Compile Include="Util\FenceFolderMigration.cs" />
     <Compile Include="Util\FenceFolderSynchronizer.cs" />
     <Compile Include="Util\FenceItemOrder.cs" />
+    <Compile Include="Util\FencePlacement.cs" />
     <Compile Include="Util\MathUtils.cs" />
     <Compile Include="Util\PathUtil.cs" />
     <Compile Include="Util\StartupManager.cs" />
+    <Compile Include="Util\SettingsValidator.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
     <Compile Include="WatchedExtensionsDialog.cs">

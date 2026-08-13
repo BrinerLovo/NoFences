@@ -19,20 +19,27 @@ namespace NoFences
         {
             DisposeFileWatchersOptimized();
 
+            if (!Properties.Settings.Default.enableFileWatchers)
+                return;
+
             try
             {
                 Directory.CreateDirectory(fenceFolderPath);
-                fenceWatcher = new FileSystemWatcher(fenceFolderPath)
+                if (fenceInfo.AutoSyncFolder)
                 {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                    Filter = "*",
-                    IncludeSubdirectories = false
-                };
-                fenceWatcher.Created += OptimizedFenceFolderChanged;
-                fenceWatcher.Renamed += OptimizedFenceFolderChanged;
-                fenceWatcher.Deleted += OptimizedFenceFolderChanged;
-                fenceWatcher.Error += OptimizedWatcherError;
-                fenceWatcher.EnableRaisingEvents = true;
+                    fenceWatcher = new FileSystemWatcher(fenceFolderPath)
+                    {
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+                        Filter = "*",
+                        IncludeSubdirectories = false,
+                        InternalBufferSize = 16 * 1024
+                    };
+                    fenceWatcher.Created += OptimizedFenceFolderChanged;
+                    fenceWatcher.Renamed += OptimizedFenceFolderChanged;
+                    fenceWatcher.Deleted += OptimizedFenceFolderChanged;
+                    fenceWatcher.Error += OptimizedWatcherError;
+                    fenceWatcher.EnableRaisingEvents = true;
+                }
 
                 if (fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Count > 0)
                 {
@@ -40,7 +47,8 @@ namespace NoFences
                     {
                         NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
                         Filter = "*",
-                        IncludeSubdirectories = false
+                        IncludeSubdirectories = false,
+                        InternalBufferSize = 16 * 1024
                     };
                     desktopWatcher.Created += OptimizedDesktopItemCreated;
                     desktopWatcher.Error += OptimizedWatcherError;
@@ -111,7 +119,12 @@ namespace NoFences
 
         private void OptimizedWatcherError(object sender, ErrorEventArgs e)
         {
-            QueueUiAction(InitializeFileWatchersOptimized);
+            AppLogger.Error("A filesystem watcher stopped and will be restarted.", e.GetException());
+            QueueUiAction(() =>
+            {
+                InitializeFileWatchersOptimized();
+                SynchronizeLinkedFolderFromWatcher();
+            });
         }
 
         private void QueueUiAction(Action action)

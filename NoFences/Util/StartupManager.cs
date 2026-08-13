@@ -1,49 +1,54 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
-using System.Windows.Forms;
 
 namespace NoFences.Util
 {
-
-
-    public class StartupManager
+    internal static class StartupManager
     {
-        private const string RegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        public const string ApplicationName = "NoFences";
+        private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-        public static void SetStartup(string appName, string appPath, bool enable)
+        public static bool TrySetStartup(string appPath, bool enable, out string errorMessage)
         {
+            errorMessage = null;
             try
             {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryKey, true))
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, true))
                 {
                     if (key == null)
-                        return;
+                    {
+                        errorMessage = "The Windows startup registry key could not be opened.";
+                        return false;
+                    }
 
                     if (enable)
-                    {
-                        key.SetValue(appName, $"\"{appPath}\"");
-                        MessageBox.Show("Application will now start with Windows.", "Startup Enabled", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                        key.SetValue(ApplicationName, $"\"{appPath}\"");
                     else
-                    {
-                        key.DeleteValue(appName, false);
-                        MessageBox.Show("Application startup disabled.", "Startup Disabled", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                        key.DeleteValue(ApplicationName, false);
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error modifying startup settings: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                errorMessage = ex.Message;
+                AppLogger.Error("Unable to update the Windows startup setting.", ex);
+                return false;
             }
         }
 
-        public static bool IsStartupEnabled(string appName)
+        public static bool IsStartupEnabled()
         {
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryKey, false))
+            try
             {
-                return key?.GetValue(appName) != null;
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
+                    return key?.GetValue(ApplicationName) != null;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Unable to read the Windows startup setting.", ex);
+                return false;
             }
         }
     }
-
 }
