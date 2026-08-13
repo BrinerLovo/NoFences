@@ -53,6 +53,16 @@ namespace NoFences.Model
         /// </summary>
         public bool AutoSyncFolder { get; set; } = true;
 
+        /// <summary>
+        /// Gets or sets how items are ordered. Manual drag reordering is available only for Custom.
+        /// </summary>
+        public FenceSortMode SortMode { get; set; } = FenceSortMode.Custom;
+
+        /// <summary>
+        /// Gets or sets whether automatic sorting uses descending order.
+        /// </summary>
+        public bool SortDescending { get; set; }
+
         public List<string> Files { get; set; } = new List<string>();
 
         /// <summary>

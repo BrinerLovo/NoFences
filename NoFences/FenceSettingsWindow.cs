@@ -27,6 +27,8 @@ namespace NoFences
         private readonly CheckBox autoMinifyCheckBox;
         private readonly CheckBox inheritTitleCheckBox;
         private readonly NumericUpDown titleHeightInput;
+        private readonly ComboBox sortModeInput;
+        private readonly CheckBox sortDescendingCheckBox;
 
         public FenceSettingsWindow(FenceInfo fenceInfo, string effectiveFolderPath)
         {
@@ -42,7 +44,7 @@ namespace NoFences
             MinimizeBox = false;
             ShowIcon = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(650, 600);
+            ClientSize = new Size(650, 650);
 
             var header = new Panel { Dock = DockStyle.Top, Height = 82, Padding = new Padding(24, 18, 24, 8) };
             header.Controls.Add(new Label
@@ -79,6 +81,26 @@ namespace NoFences
             extensionsInput = CreateTextBox(string.Join(", ", fenceInfo.WatchedExtensions ?? new List<string>()));
             lockedCheckBox = CreateCheckBox("Lock position and size", fenceInfo.Locked);
             autoSyncCheckBox = CreateCheckBox("Automatically sync changes from the linked folder", fenceInfo.AutoSyncFolder);
+            sortModeInput = new ComboBox
+            {
+                BackColor = Color.FromArgb(36, 36, 36),
+                DrawMode = DrawMode.OwnerDrawFixed,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = PrimaryText,
+                Height = 30,
+                ItemHeight = 24
+            };
+            sortModeInput.Items.AddRange(new object[]
+            {
+                "Custom order",
+                "Name",
+                "Type",
+                "Date modified"
+            });
+            sortModeInput.SelectedIndex = (int)fenceInfo.SortMode;
+            sortModeInput.DrawItem += SortModeInput_DrawItem;
+            sortDescendingCheckBox = CreateCheckBox("Reverse sort order", fenceInfo.SortDescending);
             inheritMinifyCheckBox = CreateCheckBox("Use global auto-minify setting", fenceInfo.UseGlobalAutoMinify);
             autoMinifyCheckBox = CreateCheckBox("Auto-minify this fence", fenceInfo.CanMinify);
             inheritTitleCheckBox = CreateCheckBox("Use global title height", fenceInfo.UseGlobalTitleHeight);
@@ -96,8 +118,11 @@ namespace NoFences
             };
             inheritMinifyCheckBox.CheckedChanged += (sender, args) => autoMinifyCheckBox.Enabled = !inheritMinifyCheckBox.Checked;
             inheritTitleCheckBox.CheckedChanged += (sender, args) => titleHeightInput.Enabled = !inheritTitleCheckBox.Checked;
+            sortModeInput.SelectedIndexChanged += (sender, args) =>
+                sortDescendingCheckBox.Enabled = sortModeInput.SelectedIndex != (int)FenceSortMode.Custom;
             autoMinifyCheckBox.Enabled = !inheritMinifyCheckBox.Checked;
             titleHeightInput.Enabled = !inheritTitleCheckBox.Checked;
+            sortDescendingCheckBox.Enabled = fenceInfo.SortMode != FenceSortMode.Custom;
 
             content.Controls.Add(CreateSection(
                 "Identity",
@@ -116,7 +141,10 @@ namespace NoFences
                 "Per-fence interaction overrides.",
                 lockedCheckBox,
                 inheritMinifyCheckBox,
-                autoMinifyCheckBox));
+                autoMinifyCheckBox,
+                CreateLabeledRow("Item order", sortModeInput),
+                sortDescendingCheckBox,
+                CreateHint("Manual drag-and-drop reordering is available only with Custom order.")));
             content.Controls.Add(CreateSection(
                 "Appearance",
                 "Keep the global title size or use a local value.",
@@ -158,6 +186,8 @@ namespace NoFences
         public bool AutoMinify => autoMinifyCheckBox.Checked;
         public bool UseGlobalTitleHeight => inheritTitleCheckBox.Checked;
         public int TitleHeight => (int)titleHeightInput.Value;
+        public FenceSortMode SortMode => (FenceSortMode)Math.Max(0, sortModeInput.SelectedIndex);
+        public bool SortDescending => sortDescendingCheckBox.Checked;
         public List<string> WatchedExtensions => SettingsValidator.NormalizeExtensions(
             extensionsInput.Text.Split(
                 new[] { ',', ';', ' ', '\r', '\n', '\t' },
@@ -199,6 +229,24 @@ namespace NoFences
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                     folderInput.Text = dialog.SelectedPath;
             }
+        }
+
+        private static void SortModeInput_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || !(sender is ComboBox comboBox))
+                return;
+
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            using (var background = new SolidBrush(selected ? Color.FromArgb(65, 65, 65) : Color.FromArgb(36, 36, 36)))
+                e.Graphics.FillRectangle(background, e.Bounds);
+
+            TextRenderer.DrawText(
+                e.Graphics,
+                comboBox.Items[e.Index].ToString(),
+                comboBox.Font,
+                new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
+                PrimaryText,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
 
         private static Panel CreateSection(string title, string description, params WinFormsControl[] controls)

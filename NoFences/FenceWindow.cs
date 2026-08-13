@@ -1,4 +1,6 @@
 using NoFences.Model;
+using NoFences.Interaction;
+using NoFences.Layout;
 using NoFences.Util;
 using NoFences.Win32;
 using Peter;
@@ -15,8 +17,6 @@ namespace NoFences
 {
     public partial class FenceWindow : Form
     {
-        private const string InternalItemDragFormat = "NoFences.InternalItemDrag";
-
         public enum FenceState
         {
             Normal,
@@ -26,26 +26,11 @@ namespace NoFences
 
         private int logicalTitleHeight;
         private int titleHeight;
-        private const int titleOffset = 1;
-        private const int itemWidth = 75;
-        private const int itemHeight = 32 + itemPadding + textHeight;
-        private const int textHeight = 35;
-        private const int itemPadding = 15;
-        private const float shadowDist = 1f;
-
         private readonly FenceInfo fenceInfo;
 
-        private Font titleFont;
-        private Font iconFont;
-
         private FenceState state = FenceState.Normal;
-        private string selectedItem;
         private string hoveringItem;
         private string draggedItem;
-        private bool shouldUpdateSelection;
-        private bool shouldRunDoubleClick;
-        private bool hasSelectionUpdated;
-        private bool hasHoverUpdated;
 
         private int scrollHeight;
         private int scrollOffset;
@@ -68,18 +53,14 @@ namespace NoFences
         private bool isDraggingItem = false;
         private Point dragStartPosition;
         private string dragStartItem;
-        private int dragStartItemIndex = -1;
 
         private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromMilliseconds(350));
         private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromMilliseconds(350));
         private readonly ShellContextMenu shellContextMenu = new ShellContextMenu();
         private readonly ThumbnailProvider thumbnailProvider = new ThumbnailProvider();
+        private readonly FenceDragDropController dragDropController = new FenceDragDropController();
         private readonly object saveLock = new object();
         private bool deleteFenceOnClose;
-        private int draggedItemIndex = -1;
-        private readonly string internalDragSourceId = Guid.NewGuid().ToString("N");
-        private bool internalDropHandled;
-        private readonly int itemWidtHalf = itemWidth / 2;
 
         private FileSystemWatcher fenceWatcher;
         private FileSystemWatcher desktopWatcher;
@@ -87,17 +68,6 @@ namespace NoFences
         private string fenceFolderPath 
         { 
             get { return FenceManager.Instance.GetContentFolderPath(fenceInfo); }
-        }
-
-        private void ReloadFonts()
-        {
-            titleFont?.Dispose();
-            iconFont?.Dispose();
-            using (var family = new FontFamily("Segoe UI"))
-            {
-                titleFont = new Font(family, (int)Math.Floor(logicalTitleHeight / 2.0));
-                iconFont = new Font(family, 9);
-            }
         }
 
         public FenceWindow(FenceInfo fenceInfo)
@@ -126,8 +96,6 @@ namespace NoFences
             this.MouseUp += FenceWindow_MouseUp;
             this.KeyDown += FenceWindow_KeyDown; // Add keyboard event handler
             thumbnailProvider.IconThumbnailLoaded += ThumbnailProvider_IconThumbnailLoaded;
-
-            ReloadFonts();
 
             AllowDrop = true;
             KeyPreview = true; // Enable key events for the form
@@ -257,122 +225,6 @@ namespace NoFences
                         m.Result = new IntPtr(HTRIGHT);
                 }
             }
-        }
-
-        private void FenceWindow_DragEnter(object sender, DragEventArgs e)
-        {
-            if (lockedToolStripMenuItem.Checked) return;
-
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(InternalItemDragFormat))
-                e.Effect = DragDropEffects.Move;
-        }
-
-        private void FenceWindow_DragDrop(object sender, DragEventArgs e)
-        {
-            string dragSourceId = e.Data.GetDataPresent(InternalItemDragFormat)
-                ? e.Data.GetData(InternalItemDragFormat) as string
-                : null;
-
-            // Handle a reorder only when the drag originated from this exact window.
-            // Mark it handled even when its position is unchanged.
-            if (string.Equals(dragSourceId, internalDragSourceId, StringComparison.Ordinal))
-            {
-                internalDropHandled = true;
-                e.Effect = DragDropEffects.Move;
-                Point dropPoint = PointToClient(new Point(e.X, e.Y));
-                int newIndex = GetItemIndexAtPosition(dropPoint);
-                if (draggedItem != null)
-                {
-                    var files = fenceInfo.Files.ToList();
-                    if (FenceItemOrder.TryMove(files, draggedItem, newIndex, out int sourceIndex))
-                    {
-                        RecordReorderUndo(draggedItem, sourceIndex);
-                        fenceInfo.Files = files;
-                        Save();
-                    }
-                }
-
-                draggedItemIndex = -1;
-                draggedItem = null;
-                isDragging = false;
-                Invalidate();
-                return;
-            }
-
-            string[] dropped = e.Data.GetData(DataFormats.FileDrop) as string[];
-            if (dropped == null || dropped.Length == 0)
-                return;
-
-            var addedPaths = new List<string>(dropped.Length);
-            int failedMoveCount = 0;
-            foreach (var item in dropped)
-            {
-                if (!fenceInfo.Files.Contains(item, StringComparer.OrdinalIgnoreCase) && ItemExists(item))
-                {
-                    if (TryMoveItemToFenceFolder(item, out string itemPath))
-                    {
-                        if (!fenceInfo.Files.Contains(itemPath, StringComparer.OrdinalIgnoreCase))
-                        {
-                            fenceInfo.Files.Add(itemPath);
-                            addedPaths.Add(itemPath);
-                        }
-                    }
-                    else
-                    {
-                        failedMoveCount++;
-                    }
-                }
-            }
-
-            if (addedPaths.Count == 0)
-            {
-                e.Effect = DragDropEffects.None;
-                if (failedMoveCount > 0)
-                {
-                    MessageBox.Show(
-                        "The item could not be moved into the fence folder.",
-                        "Move to fence",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-                return;
-            }
-
-            e.Effect = DragDropEffects.Move;
-
-            Save(); // Ensure we save after adding files
-            this.BeginInvoke((Action)(() =>
-            {
-                Invalidate();
-            }));
-
-            if (failedMoveCount > 0)
-            {
-                MessageBox.Show(
-                    $"Moved {addedPaths.Count} item(s), but {failedMoveCount} item(s) could not be moved.",
-                    "Move to fence",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
-        }
-
-        private void FenceWindow_QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
-        {
-            // Don't interfere with the drag operation - let Windows handle the file placement
-            // We'll only handle cancellation if needed
-            if (e.Action == DragAction.Cancel)
-            {
-                Cursor = Cursors.Default;
-                draggedItem = null;
-                draggedItemIndex = -1;
-                Invalidate();
-            }
-        }
-
-        private void FenceWindow_GiveFeedback(object sender, GiveFeedbackEventArgs e)
-        {
-            Cursor = Cursors.Default;
-            e.UseDefaultCursors = true;
         }
 
         private void FenceWindow_Resize(object sender, EventArgs e)
@@ -516,40 +368,57 @@ namespace NoFences
             }
             else if (isDraggingItem && dragStartItem != null)
             {
-                // Check if we've moved far enough to start a real drag operation
                 int deltaX = Math.Abs(e.X - dragStartPosition.X);
                 int deltaY = Math.Abs(e.Y - dragStartPosition.Y);
-                
-                if (deltaX > 8 || deltaY > 8) // Drag threshold
+
+                if (deltaX > SystemInformation.DragSize.Width / 2
+                    || deltaY > SystemInformation.DragSize.Height / 2)
                 {
-                    // Start the actual drag operation
-                    draggedItem = dragStartItem;
-                    draggedItemIndex = dragStartItemIndex;
-                    
-                    // Keep FileDrop for Explorer and other fences, and use a private
-                    // format to distinguish an in-place reorder from an external move.
-                    internalDropHandled = false;
-                    var data = new DataObject();
-                    data.SetData(InternalItemDragFormat, internalDragSourceId);
-                    data.SetData(DataFormats.FileDrop, new[] { dragStartItem });
-                    var result = DoDragDrop(data, DragDropEffects.Move | DragDropEffects.Copy);
-                    
-                    // Handle the result of the drag operation
-                    if (result == DragDropEffects.Move && !internalDropHandled)
+                    FenceLayoutSnapshot layout = GetLayoutSnapshot();
+                    string[] draggedPaths = dragDropController.GetSelectedInDisplayOrder(
+                        layout.OrderedPaths,
+                        dragStartItem);
+                    if (draggedPaths.Length == 0)
                     {
-                        // File was moved outside the fence - remove it from our list
-                        fenceInfo.Files.Remove(dragStartItem);
-                        Save();
-                        System.Diagnostics.Debug.WriteLine($"File moved out of fence: {dragStartItem}");
+                        isDraggingItem = false;
+                        dragStartItem = null;
+                        return;
                     }
-                    
-                    // Reset drag state
+
+                    draggedItem = dragStartItem;
+                    DataObject data = dragDropController.CreateDragData(layout.OrderedPaths, dragStartItem);
+                    var result = DoDragDrop(data, DragDropEffects.Move | DragDropEffects.Copy);
+
+                    if (result == DragDropEffects.Move && !dragDropController.InternalDropHandled)
+                    {
+                        string[] previousItems = fenceInfo.Files.ToArray();
+                        var handledByFence = new HashSet<string>(
+                            dragDropController.GetPathsHandledByFence(data),
+                            StringComparer.OrdinalIgnoreCase);
+                        int removed = 0;
+                        for (int index = 0; index < draggedPaths.Length; index++)
+                        {
+                            string path = draggedPaths[index];
+                            if (handledByFence.Contains(path) || !ItemExists(path))
+                            {
+                                removed += fenceInfo.Files.RemoveAll(candidate =>
+                                    string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase));
+                            }
+                        }
+
+                        if (removed > 0)
+                        {
+                            if (draggedPaths.All(ItemExists))
+                                RecordUndo("move items out", previousItems);
+                            Save();
+                        }
+                    }
+
                     isDraggingItem = false;
                     draggedItem = null;
-                    draggedItemIndex = -1;
                     dragStartItem = null;
-                    dragStartItemIndex = -1;
-                    Invalidate();
+                    dragDropController.RetainExisting(fenceInfo.Files);
+                    InvalidateFenceContent();
                 }
             }
             else if (!IsMinified && !lockedToolStripMenuItem.Checked)
@@ -565,9 +434,22 @@ namespace NoFences
 
         private void FenceWindow_MouseDown(object sender, MouseEventArgs e)
         {
+            FenceLayoutSnapshot layout = GetLayoutSnapshot();
+            string hitItem = CanInteractWithContent() ? layout.HitTest(e.Location) : null;
+
             if (e.Button == MouseButtons.Left)
             {
                 bool isLocked = lockedToolStripMenuItem.Checked;
+
+                if (e.Y >= titleHeight)
+                {
+                    dragDropController.Select(
+                        hitItem,
+                        layout.OrderedPaths,
+                        ModifierKeys.HasFlag(Keys.Control),
+                        ModifierKeys.HasFlag(Keys.Shift));
+                    Invalidate();
+                }
 
                 if (snapping && e.Y < titleHeight && !isLocked) // Only drag from title bar
                 {
@@ -595,20 +477,24 @@ namespace NoFences
                     resizeStartSize = this.Size;
                     this.Cursor = Cursors.SizeNS;
                 }
-                else if (!isDraggingWindow && scrollHeight > 0 && draggedItem == null && hoveringItem == null) // content scroll dragging with left mouse button
+                else if (!isDraggingWindow && scrollHeight > 0 && draggedItem == null && hitItem == null) // content scroll dragging with left mouse button
                 {
                     isDragging = true;
                     initialMousePosition = e.Location;
                 }
-                else if (hoveringItem != null && !isLocked) // Start tracking potential item drag
+                else if (hitItem != null && !isLocked) // Start tracking potential item drag
                 {
                     isDraggingItem = true;
                     dragStartPosition = e.Location;
-                    dragStartItem = hoveringItem;
-                    
-                    // Find the index of the item we're starting to drag
-                    dragStartItemIndex = fenceInfo.Files.IndexOf(hoveringItem);
+                    dragStartItem = hitItem;
                 }
+            }
+            else if (e.Button == MouseButtons.Right && hitItem != null)
+            {
+                if (!dragDropController.IsSelected(hitItem))
+                    dragDropController.Select(hitItem, layout.OrderedPaths, false, false);
+                hoveringItem = hitItem;
+                Invalidate();
             }
         }
 
@@ -625,7 +511,6 @@ namespace NoFences
                 {
                     isDraggingItem = false;
                     dragStartItem = null;
-                    dragStartItemIndex = -1;
                 }
                 
                 this.Cursor = Cursors.Default;
@@ -645,14 +530,12 @@ namespace NoFences
         private void FenceWindow_MouseLeave(object sender, EventArgs e)
         {
             Minify();
-            selectedItem = null;
             if (overallOpacity < 1) SetOverallOpacity(overallOpacity);
             Invalidate();
         }
 
         private void FenceWindow_Click(object sender, EventArgs e)
         {
-            shouldUpdateSelection = true;
             Invalidate();
         }
 
@@ -664,10 +547,12 @@ namespace NoFences
                 return;
             }
 
-            shouldRunDoubleClick = true;
-            Invalidate();
-
-            if (hoveringItem != null) return;
+            string hitItem = GetLayoutSnapshot().HitTest(e.Location);
+            if (hitItem != null)
+            {
+                FenceEntry.FromPath(hitItem)?.Open();
+                return;
+            }
 
             if (state == FenceState.Maximized)
             {
@@ -758,13 +643,23 @@ namespace NoFences
             if (e.Button != MouseButtons.Right)
                 return;
 
-            if (hoveringItem != null && !ModifierKeys.HasFlag(Keys.Shift))
+            FenceLayoutSnapshot layout = GetLayoutSnapshot();
+            string hitItem = layout.HitTest(e.Location);
+            if (hitItem != null)
             {
-                shellContextMenu.ShowContextMenu(new[] { new FileInfo(hoveringItem) }, MousePosition);
+                if (!dragDropController.IsSelected(hitItem))
+                    dragDropController.Select(hitItem, layout.OrderedPaths, false, false);
+
+                string[] selected = dragDropController.GetSelectedInDisplayOrder(layout.OrderedPaths, hitItem);
+                if (selected.All(File.Exists))
+                    shellContextMenu.ShowContextMenu(selected.Select(path => new FileInfo(path)).ToArray(), MousePosition);
+                else if (selected.All(Directory.Exists))
+                    shellContextMenu.ShowContextMenu(selected.Select(path => new DirectoryInfo(path)).ToArray(), MousePosition);
+                else
+                    appContextMenuDark.Show(this, e.Location);
             }
             else
             {
-                // appContextMenu.Show(this, e.Location); // light skin context menu
                 appContextMenuDark.Show(this, e.Location);
             }
         }
@@ -903,6 +798,15 @@ namespace NoFences
 
         private void FenceWindow_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Control && e.KeyCode == Keys.A)
+            {
+                dragDropController.SelectAll(GetLayoutSnapshot().OrderedPaths);
+                Invalidate();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
             if (e.Control && e.KeyCode == Keys.Z)
             {
                 UndoLastFenceChange();
@@ -911,11 +815,13 @@ namespace NoFences
                 return;
             }
 
-            if (e.KeyCode == Keys.Delete && selectedItem != null && !lockedToolStripMenuItem.Checked)
+            if (e.KeyCode == Keys.Delete
+                && dragDropController.SelectedPaths.Count > 0
+                && !lockedToolStripMenuItem.Checked)
             {
-                System.Diagnostics.Debug.WriteLine($"Delete key pressed for selected item: {selectedItem}");
                 RemoveSelectedItem();
                 e.Handled = true;
+                e.SuppressKeyPress = true;
             }
         }
 
@@ -1039,7 +945,7 @@ namespace NoFences
             }
 
             Save();
-            Invalidate();
+            InvalidateFenceContent();
 
             // Show results
             string message = $"Successfully moved {movedCount} of {items.Count} items to the fence.";

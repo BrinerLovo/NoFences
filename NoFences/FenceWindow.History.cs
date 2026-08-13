@@ -1,53 +1,18 @@
+using NoFences.History;
 using NoFences.Util;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Windows.Forms;
 
 namespace NoFences
 {
     public partial class FenceWindow
     {
-        private const int UndoHistoryCapacity = 20;
-
-        private readonly List<FenceUndoState> undoHistory = new List<FenceUndoState>(UndoHistoryCapacity);
+        private readonly FenceUndoManager undoManager = new FenceUndoManager();
         private ToolStripMenuItem undoMenuItem;
         private ToolStripMenuItem undoMenuItemDark;
-
-        private enum FenceUndoKind
-        {
-            Reorder,
-            Remove,
-            Sync
-        }
-
-        private sealed class FenceUndoState
-        {
-            public FenceUndoState(
-                FenceUndoKind kind,
-                string description,
-                string[] paths,
-                int originalIndex = -1,
-                string[] addedPaths = null,
-                int[] originalIndices = null)
-            {
-                Kind = kind;
-                Description = description;
-                Paths = paths;
-                OriginalIndex = originalIndex;
-                AddedPaths = addedPaths;
-                OriginalIndices = originalIndices;
-            }
-
-            public FenceUndoKind Kind { get; }
-            public string Description { get; }
-            public string[] Paths { get; }
-            public int OriginalIndex { get; }
-            public string[] AddedPaths { get; }
-            public int[] OriginalIndices { get; }
-        }
 
         private void InitializeFenceCommands()
         {
@@ -84,119 +49,35 @@ namespace NoFences
             menu.Items.Insert(4, new ToolStripSeparator());
         }
 
-        private void RecordReorderUndo(string path, int originalIndex)
+        private void RecordUndo(string description, IReadOnlyList<string> pathsBeforeChange)
         {
-            AddUndoState(new FenceUndoState(FenceUndoKind.Reorder, "reorder", new[] { path }, originalIndex));
-        }
-
-        private void RecordRemoveUndo(string path, int originalIndex)
-        {
-            AddUndoState(new FenceUndoState(FenceUndoKind.Remove, "remove item", new[] { path }, originalIndex));
-        }
-
-        private void RecordSyncUndo(List<string> addedPaths, List<string> removedPaths, List<int> removedIndices)
-        {
-            AddUndoState(new FenceUndoState(
-                FenceUndoKind.Sync,
-                "sync",
-                removedPaths.ToArray(),
-                addedPaths: addedPaths.ToArray(),
-                originalIndices: removedIndices.ToArray()));
-        }
-
-        private void AddUndoState(FenceUndoState state)
-        {
-            if (undoHistory.Count == UndoHistoryCapacity)
-                undoHistory.RemoveAt(0);
-
-            undoHistory.Add(state);
+            undoManager.Record(description, pathsBeforeChange);
             UpdateUndoCommands();
         }
 
         private void UndoLastFenceChange()
         {
-            if (undoHistory.Count == 0)
+            if (!undoManager.TryUndo(fenceInfo.Files))
                 return;
 
-            int lastIndex = undoHistory.Count - 1;
-            FenceUndoState state = undoHistory[lastIndex];
-            undoHistory.RemoveAt(lastIndex);
-
-            ApplyUndo(state);
-            selectedItem = null;
-            hoveringItem = null;
+            dragDropController.ClearSelection();
+            InvalidateFenceContent();
             Save();
-            Invalidate();
             UpdateUndoCommands();
-        }
-
-        private void ApplyUndo(FenceUndoState state)
-        {
-            switch (state.Kind)
-            {
-                case FenceUndoKind.Reorder:
-                    int currentIndex = FindFenceItemIndex(state.Paths[0]);
-                    if (currentIndex < 0)
-                        return;
-
-                    string reorderedPath = fenceInfo.Files[currentIndex];
-                    fenceInfo.Files.RemoveAt(currentIndex);
-                    fenceInfo.Files.Insert(
-                        Math.Max(0, Math.Min(state.OriginalIndex, fenceInfo.Files.Count)),
-                        reorderedPath);
-                    break;
-
-                case FenceUndoKind.Remove:
-                    if (FindFenceItemIndex(state.Paths[0]) >= 0)
-                        return;
-
-                    fenceInfo.Files.Insert(
-                        Math.Max(0, Math.Min(state.OriginalIndex, fenceInfo.Files.Count)),
-                        state.Paths[0]);
-                    break;
-
-                case FenceUndoKind.Sync:
-                    for (int i = 0; i < state.AddedPaths.Length; i++)
-                    {
-                        string addedPath = state.AddedPaths[i];
-                        fenceInfo.Files.RemoveAll(path =>
-                            string.Equals(path, addedPath, StringComparison.OrdinalIgnoreCase));
-                    }
-
-                    for (int i = 0; i < state.Paths.Length; i++)
-                    {
-                        if (FindFenceItemIndex(state.Paths[i]) >= 0)
-                            continue;
-
-                        int insertionIndex = Math.Max(
-                            0,
-                            Math.Min(state.OriginalIndices[i], fenceInfo.Files.Count));
-                        fenceInfo.Files.Insert(insertionIndex, state.Paths[i]);
-                    }
-                    break;
-            }
-        }
-
-        private int FindFenceItemIndex(string path)
-        {
-            return fenceInfo.Files.FindIndex(item =>
-                string.Equals(item, path, StringComparison.OrdinalIgnoreCase));
         }
 
         private void UpdateUndoCommands()
         {
-            FenceUndoState state = undoHistory.Count > 0 ? undoHistory[undoHistory.Count - 1] : null;
-            string text = state == null ? "Undo" : "Undo " + state.Description;
-
-            SetUndoCommandState(undoMenuItem, state != null, text);
-            SetUndoCommandState(undoMenuItemDark, state != null, text);
+            string description = undoManager.NextDescription;
+            string text = description == null ? "Undo" : "Undo " + description;
+            SetUndoCommandState(undoMenuItem, undoManager.CanUndo, text);
+            SetUndoCommandState(undoMenuItemDark, undoManager.CanUndo, text);
         }
 
         private static void SetUndoCommandState(ToolStripMenuItem item, bool enabled, string text)
         {
             if (item == null)
                 return;
-
             item.Enabled = enabled;
             item.Text = text;
         }
@@ -211,7 +92,6 @@ namespace NoFences
             try
             {
                 FenceFolderSyncResult result = SynchronizeFenceFolder(recordUndo: true);
-
                 if (!result.Changed)
                 {
                     MessageBox.Show(
@@ -240,6 +120,7 @@ namespace NoFences
 
         private FenceFolderSyncResult SynchronizeFenceFolder(bool recordUndo)
         {
+            string[] previousPaths = recordUndo ? fenceInfo.Files.ToArray() : null;
             FenceFolderSyncResult result = FenceFolderSynchronizer.Synchronize(
                 fenceInfo.Files,
                 fenceFolderPath);
@@ -247,12 +128,11 @@ namespace NoFences
                 return result;
 
             if (recordUndo)
-                RecordSyncUndo(result.AddedPaths, result.RemovedPaths, result.RemovedIndices);
+                RecordUndo("sync", previousPaths);
 
-            selectedItem = null;
-            hoveringItem = null;
+            dragDropController.RetainExisting(fenceInfo.Files);
+            InvalidateFenceContent();
             Save();
-            Invalidate();
             return result;
         }
 

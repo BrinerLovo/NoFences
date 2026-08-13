@@ -48,10 +48,8 @@ namespace NoFences
 
             logicalTitleHeight = fenceInfo.TitleHeight;
             LoadSettings();
-            RefreshBrushes();
-
             titleHeight = LogicalToDeviceUnits(logicalTitleHeight);
-            ReloadFonts();
+            RefreshBrushes();
             Minify();
             if (IsMinified)
             {
@@ -243,12 +241,20 @@ namespace NoFences
                 ? Properties.Settings.Default.title_size
                 : dialog.TitleHeight;
             fenceInfo.WatchedExtensions = dialog.WatchedExtensions;
+            bool sortChanged = fenceInfo.SortMode != dialog.SortMode
+                || fenceInfo.SortDescending != dialog.SortDescending;
+            fenceInfo.SortMode = dialog.SortMode;
+            fenceInfo.SortDescending = dialog.SortMode != FenceSortMode.Custom && dialog.SortDescending;
+
+            if (sortChanged)
+                dragDropController.ClearSelection();
 
             Text = fenceInfo.Name;
             lockedToolStripMenuItem.Checked = fenceInfo.Locked;
             lockedTick.Checked = fenceInfo.Locked;
             minifyToolStripMenuItem.Checked = fenceInfo.CanMinify;
             RefreshSettings();
+            InvalidateFenceContent();
         }
     }
 }

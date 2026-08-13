@@ -113,7 +113,7 @@ namespace NoFences
             if (changed)
             {
                 Save();
-                Invalidate();
+                InvalidateFenceContent();
             }
         }
 

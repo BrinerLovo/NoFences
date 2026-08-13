@@ -39,6 +39,10 @@ namespace NoFences.Util
                 MaximumTitleHeight);
             fenceInfo.Files = NormalizePaths(fenceInfo.Files);
             fenceInfo.WatchedExtensions = NormalizeExtensions(fenceInfo.WatchedExtensions);
+            if (!Enum.IsDefined(typeof(FenceSortMode), fenceInfo.SortMode))
+                fenceInfo.SortMode = FenceSortMode.Custom;
+            if (fenceInfo.SortMode == FenceSortMode.Custom)
+                fenceInfo.SortDescending = false;
 
             if (!string.IsNullOrWhiteSpace(fenceInfo.CustomFolderPath))
                 fenceInfo.CustomFolderPath = fenceInfo.CustomFolderPath.Trim();

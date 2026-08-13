@@ -1,4 +1,7 @@
 using NoFences.Model;
+using NoFences.History;
+using NoFences.Interaction;
+using NoFences.Layout;
 using NoFences.Util;
 using System;
 using System.Collections.Generic;
@@ -21,6 +24,12 @@ namespace NoFences.Tests
                 return RenderSettingsPreviews(args[1]);
 
             Run("same-fence reorder preserves every item", TestReorder);
+            Run("batch reorder preserves selection order", TestBatchReorder);
+            Run("layout collapses missing entries without deleting metadata", TestMissingEntryLayout);
+            Run("multi-selection supports toggle and range selection", TestMultiSelection);
+            Run("fence sorting supports name, type, date, and custom order", TestSorting);
+            Run("undo restores complete item snapshots", TestUndoSnapshots);
+            Run("repository isolates and recovers fence metadata", TestRepository);
             Run("collision naming handles files and folders", TestCollisionNaming);
             Run("directory normalization preserves filesystem roots", TestRootPathNormalization);
             Run("physical fence moves are safe and collision-aware", TestPhysicalFenceMoves);
@@ -47,6 +56,150 @@ namespace NoFences.Tests
 
             Assert(!FenceItemOrder.TryMove(paths, "C", 1, out _), "Same-slot drop should be a no-op.");
             AssertSequence(paths, "B", "C", "A");
+        }
+
+        private static void TestBatchReorder()
+        {
+            var paths = new List<string> { "A", "B", "C", "D", "E" };
+            Assert(FenceItemOrder.TryMoveMany(paths, new[] { "B", "D" }, 5),
+                "Moving a selection should change order.");
+            AssertSequence(paths, "A", "C", "E", "B", "D");
+
+            Assert(!FenceItemOrder.TryMoveMany(paths, new[] { "B", "D" }, 5),
+                "Dropping an already-adjacent selection in place should be a no-op.");
+            AssertSequence(paths, "A", "C", "E", "B", "D");
+
+            var pathsWithHiddenEntry = new List<string> { "Missing", "A", "B", "C" };
+            Assert(FenceItemOrder.TryMoveMany(
+                    pathsWithHiddenEntry,
+                    new[] { "A", "B", "C" },
+                    new[] { "C" },
+                    0),
+                "Visible items should reorder around hidden metadata entries.");
+            AssertSequence(pathsWithHiddenEntry, "Missing", "C", "A", "B");
+        }
+
+        private static void TestMissingEntryLayout()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string missing = Path.Combine(root, "Missing.txt");
+                string first = Path.Combine(root, "First.txt");
+                string second = Path.Combine(root, "Second.txt");
+                File.WriteAllText(first, "first");
+                File.WriteAllText(second, "second");
+
+                var source = new List<string> { missing, first, second };
+                var layout = new FenceLayout();
+                FenceLayoutSnapshot snapshot = layout.CreateSnapshot(
+                    source,
+                    FenceSortMode.Custom,
+                    false,
+                    300,
+                    240,
+                    35,
+                    0);
+
+                Assert(source.Count == 3 && source[0] == missing,
+                    "Layout must not delete unavailable metadata entries.");
+                AssertSequence(snapshot.OrderedPaths, first, second);
+                Assert(snapshot.Items.Count == 2, "Only renderable entries should reserve grid cells.");
+                Assert(snapshot.Items[0].Bounds.Top == 35 + FenceLayout.ItemPadding,
+                    "The first visible entry should occupy the first grid cell.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestMultiSelection()
+        {
+            var controller = new FenceDragDropController();
+            string[] order = { "A", "B", "C", "D" };
+            controller.Select("B", order, false, false);
+            controller.Select("D", order, true, false);
+            AssertSequence(controller.GetSelectedInDisplayOrder(order), "B", "D");
+
+            controller.Select("C", order, false, true);
+            AssertSequence(controller.GetSelectedInDisplayOrder(order), "C", "D");
+
+            controller.SelectAll(order);
+            Assert(controller.SelectedPaths.Count == 4, "Select all should select every displayed item.");
+            var remaining = new List<string>(order);
+            Assert(controller.RemoveSelected(remaining, order) == 4 && remaining.Count == 0,
+                "Batch removal should remove every selected item exactly once.");
+
+            DataObject dragData = controller.CreateDragData(order, "A");
+            controller.MarkHandledByFence(dragData, new[] { "A", "C" });
+            AssertSequence(controller.GetPathsHandledByFence(dragData), "A", "C");
+        }
+
+        private static void TestSorting()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string folder = Path.Combine(root, "Folder");
+                string alphaText = Path.Combine(root, "Alpha.txt");
+                string betaZip = Path.Combine(root, "Beta.zip");
+                Directory.CreateDirectory(folder);
+                File.WriteAllText(alphaText, "alpha");
+                File.WriteAllText(betaZip, "beta");
+                File.SetLastWriteTimeUtc(alphaText, new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                File.SetLastWriteTimeUtc(betaZip, new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                Directory.SetLastWriteTimeUtc(folder, new DateTime(2023, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                string[] custom = { betaZip, folder, alphaText };
+
+                AssertSequence(FenceLayout.GetOrderedPaths(custom, FenceSortMode.Custom, false), custom);
+                AssertSequence(FenceLayout.GetOrderedPaths(custom, FenceSortMode.Name, false), alphaText, betaZip, folder);
+                AssertSequence(FenceLayout.GetOrderedPaths(custom, FenceSortMode.Type, false), folder, alphaText, betaZip);
+                AssertSequence(FenceLayout.GetOrderedPaths(custom, FenceSortMode.Date, false), folder, alphaText, betaZip);
+                AssertSequence(FenceLayout.GetOrderedPaths(custom, FenceSortMode.Date, true), betaZip, alphaText, folder);
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestUndoSnapshots()
+        {
+            var history = new FenceUndoManager(2);
+            var items = new List<string> { "A", "B" };
+            history.Record("remove item", items);
+            items.Remove("A");
+            Assert(history.CanUndo && history.NextDescription == "remove item", "Undo should expose its next action.");
+            Assert(history.TryUndo(items), "Undo should restore a recorded snapshot.");
+            AssertSequence(items, "A", "B");
+            Assert(!history.TryUndo(items), "Consumed undo entries should not run twice.");
+        }
+
+        private static void TestRepository()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                var repository = new FenceRepository(root);
+                var fence = new FenceInfo(Guid.NewGuid()) { Name = "First" };
+                repository.Save(fence);
+                fence.Name = "Second";
+                repository.Save(fence);
+
+                string metadataDirectory = Path.Combine(root, "Metadata", fence.Id.ToString("D"));
+                File.WriteAllText(Path.Combine(metadataDirectory, "__fence_metadata.xml"), "invalid");
+                IReadOnlyList<FenceInfo> loaded = repository.LoadAll();
+                Assert(loaded.Count == 1 && loaded[0].Name == "First",
+                    "Repository loading should recover the last valid atomic backup.");
+
+                repository.Delete(fence);
+                Assert(!Directory.Exists(metadataDirectory), "Deleting metadata should remove its empty repository directory.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
         }
 
         private static void TestCollisionNaming()
@@ -288,7 +441,7 @@ namespace NoFences.Tests
                 throw new InvalidOperationException(message);
         }
 
-        private static void AssertSequence(List<string> actual, params string[] expected)
+        private static void AssertSequence(IReadOnlyList<string> actual, params string[] expected)
         {
             Assert(actual.Count == expected.Length, "Sequence length differs.");
             for (int index = 0; index < expected.Length; index++)
