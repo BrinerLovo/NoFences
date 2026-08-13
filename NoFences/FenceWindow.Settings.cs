@@ -57,7 +57,7 @@ namespace NoFences
             // Reinitialize file watchers in case watched extensions changed
             ReinitializeFileWatchers();
 
-            Refresh();
+            Invalidate();
         }
 
         /// <summary>
@@ -65,14 +65,7 @@ namespace NoFences
         /// </summary>
         public void ReinitializeFileWatchers()
         {
-            // Dispose existing watchers
-            fenceWatcher?.Dispose();
-            desktopWatcher?.Dispose();
-            fenceWatcher = null;
-            desktopWatcher = null;
-
-            // Reinitialize with current settings
-            InitFileWatchers();
+            InitializeFileWatchersOptimized();
         }
 
         private void settingsMenuItem_Click(object sender, EventArgs e)
@@ -91,7 +84,7 @@ namespace NoFences
             {
                 Text = dialog.NewName;
                 fenceInfo.Name = Text;
-                Refresh();
+                Invalidate();
                 Save();
             }
         }
@@ -161,7 +154,7 @@ namespace NoFences
                     
                     Save();
                     ReinitializeFileWatchers();
-                    Refresh();
+                    Invalidate();
                 }
             }
         }
@@ -198,7 +191,7 @@ namespace NoFences
                     
                     Save();
                     ReinitializeFileWatchers();
-                    Refresh();
+                    Invalidate();
                 }
             }
         }

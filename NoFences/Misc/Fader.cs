@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 namespace NoFences.Misc
 {
-    public class Fader
+    public sealed class Fader : IDisposable
     {
         private readonly Timer fadeTimer;
         private Action<double> updateAction;
@@ -60,6 +60,15 @@ namespace NoFences.Misc
         private double Lerp(double a, double b, double t) => a + (b - a) * t;
 
         public void Stop() => fadeTimer.Stop();
+
+        public void Dispose()
+        {
+            fadeTimer.Stop();
+            fadeTimer.Tick -= FadeStep;
+            fadeTimer.Dispose();
+            updateAction = null;
+            onFinish = null;
+        }
     }
 
     public static class Easing

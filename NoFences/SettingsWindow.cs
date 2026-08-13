@@ -10,10 +10,16 @@ namespace NoFences
     {
         public Action OnSettingsChanged;
         private readonly bool initialized = false;
+        private readonly Timer settingsSaveTimer;
+        private readonly Timer settingsApplyTimer;
 
         public SettingsWindow()
         {
             InitializeComponent();
+            settingsSaveTimer = new Timer { Interval = 300 };
+            settingsSaveTimer.Tick += SettingsSaveTimer_Tick;
+            settingsApplyTimer = new Timer { Interval = 50 };
+            settingsApplyTimer.Tick += SettingsApplyTimer_Tick;
             hideDesktopToggle.Checked = Properties.Settings.Default.hide_desktop_icons;
             showContainerFolToggle.Checked = Properties.Settings.Default.show_container_folder;
             trackBarTitleHeight.Value = Properties.Settings.Default.title_size;
@@ -36,8 +42,8 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.hide_desktop_icons = hideDesktopToggle.Checked;
-            Properties.Settings.Default.Save(); // Saves the setting immediately
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsSave();
+            ScheduleSettingsApply();
         }
 
         private void opacityBar_ValueChanged(object sender, System.EventArgs e)
@@ -45,10 +51,10 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.opacity = opacityBar.Value;
-            Properties.Settings.Default.Save(); // Saves the setting immediately
+            ScheduleSettingsSave();
             UpdateText();
             windowColorPanel.BackColor = Color.FromArgb(opacityBar.Value, Properties.Settings.Default.windowColor);
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsApply();
         }
 
         private void showContainerFolToggle_CheckedChanged(object sender, EventArgs e)
@@ -56,10 +62,11 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.show_container_folder = showContainerFolToggle.Checked;
-            Properties.Settings.Default.Save(); // Saves the setting immediately
+            ScheduleSettingsSave();
 
             if (showContainerFolToggle.Checked)
             {
+                Directory.CreateDirectory(FenceWindow.HiddenDesktopPath);
                 File.SetAttributes(FenceWindow.HiddenDesktopPath, FileAttributes.Normal);
             }
             else
@@ -71,9 +78,9 @@ namespace NoFences
         private void trackBarTitleHeight_Scroll(object sender, EventArgs e)
         {
             Properties.Settings.Default.title_size = trackBarTitleHeight.Value;
-            Properties.Settings.Default.Save();
+            ScheduleSettingsSave();
             UpdateText();
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsApply();
         }
 
         private void snappingCheckbox_CheckedChanged(object sender, EventArgs e)
@@ -81,8 +88,8 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.snapping = snappingCheckbox.Checked;
-            Properties.Settings.Default.Save();
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsSave();
+            ScheduleSettingsApply();
         }
 
         private void autoMinifyCheckbox_CheckedChanged(object sender, EventArgs e)
@@ -90,8 +97,8 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.autoMinify = autoMinifyCheckbox.Checked;
-            Properties.Settings.Default.Save();
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsSave();
+            ScheduleSettingsApply();
         }
 
         private void snapSizeSlider_Scroll(object sender, EventArgs e)
@@ -99,9 +106,9 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.snapSize = snapSizeSlider.Value;
-            Properties.Settings.Default.Save();
+            ScheduleSettingsSave();
             UpdateText();
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsApply();
         }
 
         private void UpdateText()
@@ -126,8 +133,8 @@ namespace NoFences
 
                     // Store the color for customization
                     Properties.Settings.Default.headerColor = selectedColor;
-                    Properties.Settings.Default.Save();
-                    OnSettingsChanged?.Invoke();
+                    ScheduleSettingsSave();
+                    ScheduleSettingsApply();
                 }
             }
         }
@@ -137,9 +144,9 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.headerAlpha = headerAlphaSlider.Value;
-            Properties.Settings.Default.Save();
+            ScheduleSettingsSave();
             headerColorPreview.BackColor = Color.FromArgb(headerAlphaSlider.Value, Properties.Settings.Default.headerColor);
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsApply();
         }
 
         private void windowColorPanel_Click(object sender, EventArgs e)
@@ -156,8 +163,8 @@ namespace NoFences
 
                     // Store the color for customization
                     Properties.Settings.Default.windowColor = selectedColor;
-                    Properties.Settings.Default.Save();
-                    OnSettingsChanged?.Invoke();
+                    ScheduleSettingsSave();
+                    ScheduleSettingsApply();
                 }
             }
         }
@@ -181,9 +188,61 @@ namespace NoFences
             if (!initialized) return;
 
             Properties.Settings.Default.overallOpacity = (double)overallOpacitySlider.Value / 100f;
-            Properties.Settings.Default.Save();
-            OnSettingsChanged?.Invoke();
+            ScheduleSettingsSave();
+            ScheduleSettingsApply();
             UpdateText();
+        }
+
+        private void ScheduleSettingsSave()
+        {
+            settingsSaveTimer.Stop();
+            settingsSaveTimer.Start();
+        }
+
+        private void ScheduleSettingsApply()
+        {
+            settingsApplyTimer.Stop();
+            settingsApplyTimer.Start();
+        }
+
+        private void SettingsApplyTimer_Tick(object sender, EventArgs e)
+        {
+            settingsApplyTimer.Stop();
+            OnSettingsChanged?.Invoke();
+        }
+
+        private void SettingsSaveTimer_Tick(object sender, EventArgs e)
+        {
+            FlushSettingsSave();
+        }
+
+        private void FlushSettingsSave()
+        {
+            if (!settingsSaveTimer.Enabled)
+                return;
+
+            settingsSaveTimer.Stop();
+            Properties.Settings.Default.Save();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (settingsApplyTimer.Enabled)
+            {
+                settingsApplyTimer.Stop();
+                OnSettingsChanged?.Invoke();
+            }
+            FlushSettingsSave();
+            base.OnFormClosing(e);
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            settingsSaveTimer.Tick -= SettingsSaveTimer_Tick;
+            settingsSaveTimer.Dispose();
+            settingsApplyTimer.Tick -= SettingsApplyTimer_Tick;
+            settingsApplyTimer.Dispose();
+            base.OnFormClosed(e);
         }
     }
 }

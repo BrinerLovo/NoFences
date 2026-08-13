@@ -34,44 +34,16 @@ namespace NoFences
 
         private bool TryMoveItemToFenceFolder(string sourcePath, out string destinationPath)
         {
-            destinationPath = null;
-            bool isDirectory = Directory.Exists(sourcePath);
-            if (!isDirectory && !File.Exists(sourcePath))
-                return false;
+            bool moved = FenceFileMover.TryMove(
+                sourcePath,
+                fenceFolderPath,
+                out destinationPath,
+                out string errorMessage);
 
-            string trimmedSource = sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (PathUtil.IsSamePath(trimmedSource, fenceFolderPath)
-                || PathUtil.IsPathWithinDirectory(fenceFolderPath, trimmedSource))
-            {
-                return false;
-            }
+            if (!moved && !string.IsNullOrEmpty(errorMessage))
+                System.Diagnostics.Debug.WriteLine($"Unable to move item into fence: {errorMessage}");
 
-            string sourceParent = Path.GetDirectoryName(trimmedSource);
-            if (PathUtil.IsSamePath(sourceParent, fenceFolderPath))
-            {
-                destinationPath = trimmedSource;
-                return true;
-            }
-
-            try
-            {
-                Directory.CreateDirectory(fenceFolderPath);
-                destinationPath = PathUtil.GetUniqueDestinationPath(trimmedSource, fenceFolderPath, isDirectory);
-
-                if (isDirectory)
-                    Directory.Move(trimmedSource, destinationPath);
-                else
-                    File.Move(trimmedSource, destinationPath);
-
-                Console.WriteLine($"Moved item to fence folder: {trimmedSource} → {destinationPath}");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to move item to fence folder: {ex.Message}");
-                destinationPath = null;
-                return false;
-            }
+            return moved;
         }
 
         // Keep the old static methods for backward compatibility when moving to global hidden desktop

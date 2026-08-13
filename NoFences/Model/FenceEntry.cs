@@ -14,12 +14,13 @@ namespace NoFences.Model
 
         public EntryType Type { get; }
 
-        public string Name => System.IO.Path.GetFileNameWithoutExtension(Path);
+        public string Name { get; }
 
         private FenceEntry(string path, EntryType type)
         {
             Path = path;
             Type = type;
+            Name = System.IO.Path.GetFileNameWithoutExtension(path);
         }
 
         public static FenceEntry FromPath(string path)
@@ -37,33 +38,8 @@ namespace NoFences.Model
 
         public Icon ExtractIcon(ThumbnailProvider thumbnailProvider)
         {
-            if (Type == EntryType.File)
-            {
-                try
-                {
-                    string localPath = ConvertToLocalPath(Path);
-
-                    // Check if a thumbnail is supported
-                    if (thumbnailProvider.IsSupported(localPath))
-                        return thumbnailProvider.GenerateThumbnail(localPath);
-
-                    // Try extracting associated icon
-                    Icon icon = Icon.ExtractAssociatedIcon(localPath);
-                    if (icon != null)
-                        return icon;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error extracting icon: {ex.Message}");
-                }
-
-                // Return generic/unknown file icon if extraction fails
-                return IconUtil.UnknownFile;
-            }
-            else
-            {
-                return IconUtil.FolderLarge;
-            }
+            string localPath = ConvertToLocalPath(Path);
+            return thumbnailProvider.GetIcon(localPath, Type == EntryType.Folder);
         }
 
         /// <summary>

@@ -70,11 +70,12 @@ namespace NoFences
         private string dragStartItem;
         private int dragStartItemIndex = -1;
 
-        private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromSeconds(4));
-        private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromSeconds(4));
+        private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromMilliseconds(350));
+        private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromMilliseconds(350));
         private readonly ShellContextMenu shellContextMenu = new ShellContextMenu();
         private readonly ThumbnailProvider thumbnailProvider = new ThumbnailProvider();
         private readonly object saveLock = new object();
+        private bool deleteFenceOnClose;
         private int draggedItemIndex = -1;
         private readonly string internalDragSourceId = Guid.NewGuid().ToString("N");
         private bool internalDropHandled;
@@ -85,22 +86,18 @@ namespace NoFences
         
         private string fenceFolderPath 
         { 
-            get 
-            {
-                // Use custom folder path if specified, otherwise use default
-                if (!string.IsNullOrEmpty(fenceInfo.CustomFolderPath))
-                {
-                    return fenceInfo.CustomFolderPath;
-                }
-                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoFences", fenceInfo.Id.ToString());
-            }
+            get { return FenceManager.Instance.GetContentFolderPath(fenceInfo); }
         }
 
         private void ReloadFonts()
         {
-            var family = new FontFamily("Segoe UI");
-            titleFont = new Font(family, (int)Math.Floor(logicalTitleHeight / 2.0));
-            iconFont = new Font(family, 9);
+            titleFont?.Dispose();
+            iconFont?.Dispose();
+            using (var family = new FontFamily("Segoe UI"))
+            {
+                titleFont = new Font(family, (int)Math.Floor(logicalTitleHeight / 2.0));
+                iconFont = new Font(family, 9);
+            }
         }
 
         public FenceWindow(FenceInfo fenceInfo)
@@ -150,225 +147,7 @@ namespace NoFences
             Minify();
 
             // --- File Watchers ---
-            InitFileWatchers();
-        }
-
-        private void InitFileWatchers()
-        {
-            // Only initialize watchers if there are extensions to watch
-            if (fenceInfo.WatchedExtensions == null || fenceInfo.WatchedExtensions.Count == 0)
-                return;
-
-            try
-            {
-                // Ensure the fence folder exists
-                if (!Directory.Exists(fenceFolderPath))
-                {
-                    Directory.CreateDirectory(fenceFolderPath);
-                }
-
-                // Watch the fence folder for changes
-                fenceWatcher = new FileSystemWatcher(fenceFolderPath)
-                {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
-                    Filter = "*.*", // Watch all files, we'll filter by extension in the event handler
-                    IncludeSubdirectories = false,
-                    EnableRaisingEvents = true
-                };
-                fenceWatcher.Created += (s, e) => OnFenceFolderChanged(e.FullPath);
-                fenceWatcher.Changed += (s, e) => OnFenceFolderChanged(e.FullPath);
-                fenceWatcher.Renamed += (s, e) => OnFenceFolderChanged(e.FullPath);
-                fenceWatcher.Deleted += (s, e) => OnFenceFolderChanged(e.FullPath);
-
-                // Watch the Desktop for new files of the watched extensions
-                desktopWatcher = new FileSystemWatcher(DesktopPath)
-                {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                    Filter = "*.*", // Watch all files, we'll filter by extension in the event handler
-                    IncludeSubdirectories = false,
-                    EnableRaisingEvents = true
-                };
-                desktopWatcher.Created += (s, e) => OnDesktopFileCreated(e.FullPath);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to initialize file watchers: {ex.Message}");
-            }
-        }
-
-        private void OnFenceFolderChanged(string path)
-        {
-            try
-            {
-                // Check if the file extension is in our watched list OR if it's a folder
-                string extension = Path.GetExtension(path);
-                bool isWatchedFile = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(extension);
-                bool isFolder = Directory.Exists(path);
-                
-                if (!isWatchedFile && !isFolder)
-                    return;
-
-                Console.WriteLine($"Fence folder changed: {path}");
-
-                // Check if the file/folder is in the fenceInfo.Files and update UI
-                this.BeginInvoke((Action)(() =>
-                {
-                    try
-                    {
-                        // Remove missing files and folders, add new ones
-                        var files = new List<string>();
-                        var folders = new List<string>();
-                        
-                        // Get watched files
-                        if (fenceInfo.WatchedExtensions != null)
-                        {
-                            foreach (var watchedExt in fenceInfo.WatchedExtensions)
-                            {
-                                if (Directory.Exists(fenceFolderPath))
-                                {
-                                    files.AddRange(Directory.GetFiles(fenceFolderPath, "*" + watchedExt));
-                                }
-                            }
-                        }
-                        
-                        // Get folders
-                        if (Directory.Exists(fenceFolderPath))
-                        {
-                            folders.AddRange(Directory.GetDirectories(fenceFolderPath));
-                        }
-
-                        // Only remove files that are watched extensions and don't exist
-                        // Don't remove files that aren't watched extensions
-                        var filesToRemove = fenceInfo.Files.Where(f => 
-                        {
-                            if (File.Exists(f))
-                            {
-                                string fileExt = Path.GetExtension(f);
-                                return fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(fileExt) && !File.Exists(f);
-                            }
-                            else if (Directory.Exists(f))
-                            {
-                                return !Directory.Exists(f); // Remove folders that don't exist
-                            }
-                            return !File.Exists(f) && !Directory.Exists(f); // Remove if neither file nor folder exists
-                        }).ToList();
-
-                        foreach (var fileToRemove in filesToRemove)
-                        {
-                            Console.WriteLine($"Removing missing watched item: {fileToRemove}");
-                            fenceInfo.Files.Remove(fileToRemove);
-                        }
-
-                        // Add new files
-                        foreach (var file in files)
-                        {
-                            if (!fenceInfo.Files.Contains(file))
-                            {
-                                Console.WriteLine($"Adding watched file: {file}");
-                                fenceInfo.Files.Add(file);
-                            }
-                        }
-
-                        // Add new folders
-                        foreach (var folder in folders)
-                        {
-                            if (!fenceInfo.Files.Contains(folder))
-                            {
-                                Console.WriteLine($"Adding folder: {folder}");
-                                fenceInfo.Files.Add(folder);
-                            }
-                        }
-                        
-                        Save();
-                        Refresh();
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error handling fence folder change: {ex.Message}");
-                    }
-                }));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in OnFenceFolderChanged: {ex.Message}");
-            }
-        }
-
-        private void OnDesktopFileCreated(string path)
-        {
-            try
-            {
-                // Check if the file extension is in our watched list OR if it's a folder
-                string extension = Path.GetExtension(path);
-                bool isWatchedFile = fenceInfo.WatchedExtensions != null && fenceInfo.WatchedExtensions.Contains(extension);
-                bool isFolder = Directory.Exists(path);
-                
-                if (!isWatchedFile && !isFolder)
-                    return;
-
-                // Only move if file has a watched extension or is a folder and doesn't already exist in the fence
-                this.BeginInvoke((Action)(() =>
-                {
-                    try
-                    {
-                        if (!fenceInfo.Files.Contains(path) && (File.Exists(path) || Directory.Exists(path)))
-                        {
-                            // Ensure the fence folder exists
-                            if (!Directory.Exists(fenceFolderPath))
-                            {
-                                Directory.CreateDirectory(fenceFolderPath);
-                            }
-
-                            string itemName = Path.GetFileName(path);
-                            string destPath = Path.Combine(fenceFolderPath, itemName);
-
-                            // Make sure we don't overwrite an existing file/folder
-                            int counter = 1;
-                            string originalDestPath = destPath;
-                            while (File.Exists(destPath) || Directory.Exists(destPath))
-                            {
-                                if (File.Exists(path))
-                                {
-                                    string nameWithoutExt = Path.GetFileNameWithoutExtension(originalDestPath);
-                                    string ext = Path.GetExtension(originalDestPath);
-                                    string dir = Path.GetDirectoryName(originalDestPath);
-                                    destPath = Path.Combine(dir, $"{nameWithoutExt}_{counter}{ext}");
-                                }
-                                else
-                                {
-                                    string dir = Path.GetDirectoryName(originalDestPath);
-                                    destPath = Path.Combine(dir, $"{itemName}_{counter}");
-                                }
-                                counter++;
-                            }
-
-                            // Move file or folder
-                            if (File.Exists(path))
-                            {
-                                File.Move(path, destPath);
-                                Console.WriteLine($"Auto-moved file from Desktop to fence: {path} → {destPath}");
-                            }
-                            else if (Directory.Exists(path))
-                            {
-                                Directory.Move(path, destPath);
-                                Console.WriteLine($"Auto-moved folder from Desktop to fence: {path} → {destPath}");
-                            }
-
-                            fenceInfo.Files.Add(destPath);
-                            Save();
-                            Refresh();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Failed to move item from Desktop: {ex.Message}");
-                    }
-                }));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in OnDesktopFileCreated: {ex.Message}");
-            }
+            InitializeFileWatchersOptimized();
         }
 
         protected override void WndProc(ref Message m)
@@ -497,19 +276,10 @@ namespace NoFences
                 e.Effect = DragDropEffects.Move;
                 Point dropPoint = PointToClient(new Point(e.X, e.Y));
                 int newIndex = GetItemIndexAtPosition(dropPoint);
-                int sourceIndex = draggedItem == null
-                    ? -1
-                    : fenceInfo.Files.FindIndex(path =>
-                        string.Equals(path, draggedItem, StringComparison.OrdinalIgnoreCase));
-
-                if (newIndex >= 0 && sourceIndex >= 0 && draggedItem != null)
+                if (draggedItem != null)
                 {
                     var files = fenceInfo.Files.ToList();
-                    files.RemoveAt(sourceIndex);
-                    newIndex = Math.Max(0, Math.Min(newIndex, files.Count));
-
-                    if (!files.Contains(draggedItem)) files.Insert(newIndex, draggedItem);
-                    if (!files.SequenceEqual(fenceInfo.Files, StringComparer.OrdinalIgnoreCase))
+                    if (FenceItemOrder.TryMove(files, draggedItem, newIndex, out int sourceIndex))
                     {
                         RecordReorderUndo(draggedItem, sourceIndex);
                         fenceInfo.Files = files;
@@ -590,7 +360,7 @@ namespace NoFences
                 Cursor = Cursors.Default;
                 draggedItem = null;
                 draggedItemIndex = -1;
-                Refresh();
+                Invalidate();
             }
         }
 
@@ -614,7 +384,7 @@ namespace NoFences
                 Save();
             });
 
-            Refresh();
+            Invalidate();
         }
 
         private void ResizeWindowStep(object sender, EventArgs e)
@@ -637,7 +407,7 @@ namespace NoFences
                 this.Size = targetSize; // Snap to final size
                 resizeTimer.Stop();
                 isAnimating = false;
-                Refresh();
+                Invalidate();
             }
         }
 
@@ -700,7 +470,7 @@ namespace NoFences
                     fenceInfo.Height = newHeight;
                     fenceInfo.PosX = newX;
                     fenceInfo.PosY = newY;
-                    Save();
+                    throttledResize.Run(Save);
                     if (resizeEdge == "left")
                     {
                         this.Location = new Point(newX, this.Top);
@@ -757,7 +527,7 @@ namespace NoFences
                     draggedItemIndex = -1;
                     dragStartItem = null;
                     dragStartItemIndex = -1;
-                    Refresh();
+                    Invalidate();
                 }
             }
             else if (!IsMinified && !lockedToolStripMenuItem.Checked)
@@ -768,7 +538,7 @@ namespace NoFences
                     : IsNearBottomEdge(e.Location) ? Cursors.SizeNS : Cursors.Default;
             }
 
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_MouseDown(object sender, MouseEventArgs e)
@@ -855,13 +625,13 @@ namespace NoFences
             Minify();
             selectedItem = null;
             if (overallOpacity < 1) SetOverallOpacity(overallOpacity);
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_Click(object sender, EventArgs e)
         {
             shouldUpdateSelection = true;
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_MouseDoubleClick(object sender, MouseEventArgs e)
@@ -873,7 +643,7 @@ namespace NoFences
             }
 
             shouldRunDoubleClick = true;
-            Refresh();
+            Invalidate();
 
             if (hoveringItem != null) return;
 
@@ -900,9 +670,33 @@ namespace NoFences
 
         private void FenceWindow_FormClosed(object sender, FormClosedEventArgs e)
         {
-            // Dispose file watchers
-            fenceWatcher?.Dispose();
-            desktopWatcher?.Dispose();
+            DisposeFileWatchersOptimized();
+
+            if (deleteFenceOnClose)
+            {
+                // A delayed move/resize save must not recreate metadata after the
+                // user explicitly removes this fence.
+                throttledMove.Cancel();
+                throttledResize.Cancel();
+            }
+            else
+            {
+                throttledMove.Flush();
+                throttledResize.Flush();
+            }
+
+            thumbnailProvider.IconThumbnailLoaded -= ThumbnailProvider_IconThumbnailLoaded;
+            thumbnailProvider.Dispose();
+            DisposeDrawingResources();
+            folderSyncDebouncer.Dispose();
+            desktopImportDebouncer.Dispose();
+            throttledMove.Dispose();
+            throttledResize.Dispose();
+
+            if (deleteFenceOnClose)
+                FenceManager.Instance.RemoveFence(fenceInfo, this);
+            else
+                FenceManager.Instance.RemoveFence(this);
 
             if (Application.OpenForms.Count == 0)
                 Application.Exit();
@@ -912,9 +706,7 @@ namespace NoFences
         {
             lock (saveLock)
             {
-                Console.WriteLine($"Saving fence '{fenceInfo.Name}' with {fenceInfo.Files.Count} files");
                 FenceManager.Instance.UpdateFence(fenceInfo);
-                Refresh();
             }
         }
 
@@ -924,7 +716,7 @@ namespace NoFences
             {
                 state = FenceState.Minified;
                 Height = titleHeight;
-                Refresh();
+                Invalidate();
             }
         }
 
@@ -975,7 +767,7 @@ namespace NoFences
 
         private void ThumbnailProvider_IconThumbnailLoaded(object sender, EventArgs e)
         {
-            Invalidate();
+            QueueUiAction(Invalidate);
         }
 
         private void OnTitleBarClick()
@@ -1068,11 +860,12 @@ namespace NoFences
 
         private void deleteItemToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var result = MessageBox.Show($"Are you sure you want to delete fence '{Text}'?", 
+            var result = MessageBox.Show(
+                $"Remove fence '{Text}'?\n\nThe linked folder and all of its files will be kept.",
                 "Delete Fence", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result == DialogResult.Yes)
             {
-                FenceManager.Instance.RemoveFence(fenceInfo, this);
+                deleteFenceOnClose = true;
                 Close();
             }
         }
@@ -1225,7 +1018,7 @@ namespace NoFences
             }
 
             Save();
-            Refresh();
+            Invalidate();
 
             // Show results
             string message = $"Successfully moved {movedCount} of {items.Count} items to the fence.";

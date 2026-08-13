@@ -206,44 +206,9 @@ namespace NoFences
         {
             try
             {
-                Directory.CreateDirectory(fenceFolderPath);
+                FenceFolderSyncResult result = SynchronizeFenceFolder(recordUndo: true);
 
-                string[] folderItems = Directory
-                    .EnumerateFileSystemEntries(fenceFolderPath, "*", SearchOption.TopDirectoryOnly)
-                    .Where(path => !IsFenceMetadataPath(path))
-                    .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
-                    .ToArray();
-                var folderItemSet = new HashSet<string>(folderItems, StringComparer.OrdinalIgnoreCase);
-                var removedPaths = new List<string>();
-                var removedIndices = new List<int>();
-
-                for (int i = 0; i < fenceInfo.Files.Count; i++)
-                {
-                    string displayedPath = fenceInfo.Files[i];
-                    if (IsDirectFenceFolderChild(displayedPath)
-                        && (IsFenceMetadataPath(displayedPath) || !folderItemSet.Contains(displayedPath)))
-                    {
-                        removedPaths.Add(displayedPath);
-                        removedIndices.Add(i);
-                    }
-                }
-
-                for (int i = removedIndices.Count - 1; i >= 0; i--)
-                    fenceInfo.Files.RemoveAt(removedIndices[i]);
-
-                var displayedItems = new HashSet<string>(fenceInfo.Files, StringComparer.OrdinalIgnoreCase);
-                var addedPaths = new List<string>();
-                for (int i = 0; i < folderItems.Length; i++)
-                {
-                    string folderItem = folderItems[i];
-                    if (displayedItems.Add(folderItem))
-                    {
-                        fenceInfo.Files.Add(folderItem);
-                        addedPaths.Add(folderItem);
-                    }
-                }
-
-                if (addedPaths.Count == 0 && removedPaths.Count == 0)
+                if (!result.Changed)
                 {
                     MessageBox.Show(
                         "The fence is already synchronized with its folder.",
@@ -253,14 +218,8 @@ namespace NoFences
                     return;
                 }
 
-                RecordSyncUndo(addedPaths, removedPaths, removedIndices);
-                selectedItem = null;
-                hoveringItem = null;
-                Save();
-                Invalidate();
-
                 MessageBox.Show(
-                    $"Sync complete. Added {addedPaths.Count} item(s) and removed {removedPaths.Count} stale item(s).",
+                    $"Sync complete. Added {result.AddedPaths.Count} item(s) and removed {result.RemovedPaths.Count} stale item(s).",
                     "Sync",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -275,30 +234,22 @@ namespace NoFences
             }
         }
 
-        private bool IsDirectFenceFolderChild(string path)
+        private FenceFolderSyncResult SynchronizeFenceFolder(bool recordUndo)
         {
-            if (string.IsNullOrWhiteSpace(path))
-                return false;
+            FenceFolderSyncResult result = FenceFolderSynchronizer.Synchronize(
+                fenceInfo.Files,
+                fenceFolderPath);
+            if (!result.Changed)
+                return result;
 
-            try
-            {
-                string trimmedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                return PathUtil.IsSamePath(Path.GetDirectoryName(trimmedPath), fenceFolderPath);
-            }
-            catch (Exception ex) when (
-                ex is ArgumentException
-                || ex is NotSupportedException
-                || ex is PathTooLongException)
-            {
-                return false;
-            }
-        }
+            if (recordUndo)
+                RecordSyncUndo(result.AddedPaths, result.RemovedPaths, result.RemovedIndices);
 
-        private static bool IsFenceMetadataPath(string path)
-        {
-            string extension = Path.GetExtension(path);
-            return string.Equals(extension, ".xml", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(extension, ".bak", StringComparison.OrdinalIgnoreCase);
+            selectedItem = null;
+            hoveringItem = null;
+            Save();
+            Invalidate();
+            return result;
         }
 
         private void openFolderToolStripMenuItem_Click(object sender, EventArgs e)

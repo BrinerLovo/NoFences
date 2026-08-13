@@ -1,96 +1,222 @@
-﻿using System;
+using NoFences.Win32;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
-using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace NoFences.Util
 {
-    public class ThumbnailProvider
+    public sealed class ThumbnailProvider : IDisposable
     {
-        // Supported .NET images as per https://docs.microsoft.com/en-us/dotnet/api/system.drawing.image.fromfile
-        private static readonly string[] SupportedExtensions =
-        {
-            ".bmp",
-            ".gif",
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".tiff",
-            ".tif",
-        };
+        private static readonly HashSet<string> SupportedExtensions =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ".bmp", ".gif", ".jpg", ".jpeg", ".png", ".tiff", ".tif"
+            };
 
-        private class ThumbnailState
+        private const int MaxThumbnailSize = 32;
+        private readonly object cacheLock = new object();
+        private readonly Dictionary<string, Icon> iconCache =
+            new Dictionary<string, Icon>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Icon> retiredIcons = new List<Icon>();
+        private readonly HashSet<string> pendingThumbnails =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(4);
+        private readonly SynchronizationContext synchronizationContext;
+        private bool disposed;
+
+        public ThumbnailProvider()
         {
-            public Icon icon;
+            synchronizationContext = SynchronizationContext.Current;
         }
 
-        // Only allow 4 concurrent images to be decoded to try and prevent OOM errors
-        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(4);
-        private readonly IDictionary<string, ThumbnailState> iconCache = new Dictionary<string, ThumbnailState>();
         public event EventHandler IconThumbnailLoaded;
-        private const int MAX_THUMBNAIL_SIZE = 32;
 
         public bool IsSupported(string path)
         {
-            return SupportedExtensions.Any(ext => path.EndsWith(ext));
+            return SupportedExtensions.Contains(Path.GetExtension(path));
+        }
+
+        public Icon GetIcon(string path, bool isFolder)
+        {
+            if (isFolder)
+                return IconUtil.FolderLarge;
+
+            lock (cacheLock)
+            {
+                if (iconCache.TryGetValue(path, out Icon cachedIcon))
+                    return cachedIcon;
+            }
+
+            Icon initialIcon = ExtractAssociatedIcon(path);
+            bool startThumbnail;
+            lock (cacheLock)
+            {
+                if (iconCache.TryGetValue(path, out Icon existingIcon))
+                {
+                    initialIcon.Dispose();
+                    return existingIcon;
+                }
+
+                iconCache.Add(path, initialIcon);
+                startThumbnail = IsSupported(path) && pendingThumbnails.Add(path);
+            }
+
+            if (startThumbnail)
+                Task.Run(() => GenerateThumbnailAsync(path));
+
+            return initialIcon;
         }
 
         public Icon GenerateThumbnail(string path)
         {
-            if (!iconCache.ContainsKey(path))
+            return GetIcon(path, isFolder: false);
+        }
+
+        private async Task GenerateThumbnailAsync(string path)
+        {
+            await semaphore.WaitAsync().ConfigureAwait(false);
+            try
             {
-                return SubmitGeneratorTask(path).icon;
+                if (disposed || !File.Exists(path))
+                    return;
+
+                Icon thumbnail = CreateThumbnail(path);
+                if (thumbnail == null)
+                    return;
+
+                lock (cacheLock)
+                {
+                    if (disposed)
+                    {
+                        thumbnail.Dispose();
+                        return;
+                    }
+
+                    if (iconCache.TryGetValue(path, out Icon oldIcon))
+                        retiredIcons.Add(oldIcon);
+                    iconCache[path] = thumbnail;
+                }
+
+                RaiseThumbnailLoaded();
             }
-            else
+            catch (Exception ex) when (
+                ex is IOException
+                || ex is UnauthorizedAccessException
+                || ex is ArgumentException
+                || ex is ExternalException)
             {
-                return iconCache[path].icon;
+                System.Diagnostics.Debug.WriteLine($"Unable to generate thumbnail for '{path}': {ex.Message}");
+            }
+            finally
+            {
+                lock (cacheLock)
+                    pendingThumbnails.Remove(path);
+                semaphore.Release();
             }
         }
 
-        private ThumbnailState SubmitGeneratorTask(string path)
+        private static Icon CreateThumbnail(string path)
         {
-            var state = new ThumbnailState() { icon = Icon.ExtractAssociatedIcon(path) };
-            iconCache[path] = state;
-
-            Task.Run(() =>
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (Image image = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: false))
+            using (var canvas = new Bitmap(MaxThumbnailSize, MaxThumbnailSize))
+            using (Graphics graphics = Graphics.FromImage(canvas))
             {
-                semaphore.Wait();
-                using (MemoryStream ms = new MemoryStream(File.ReadAllBytes(path)))
+                Size scaledSize = GetScaledSize(
+                    image.Width,
+                    image.Height,
+                    MaxThumbnailSize,
+                    MaxThumbnailSize);
+
+                graphics.Clear(Color.Transparent);
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.DrawImage(
+                    image,
+                    (MaxThumbnailSize - scaledSize.Width) / 2,
+                    (MaxThumbnailSize - scaledSize.Height) / 2,
+                    scaledSize.Width,
+                    scaledSize.Height);
+
+                IntPtr iconHandle = canvas.GetHicon();
+                try
                 {
-                    using (var img = Image.FromStream(ms))
-                    {
-                        // Compute scaled size while keeping aspect ratio
-                        Size scaledSize = GetScaledSize(img.Width, img.Height, MAX_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE);
-
-                        using (Bitmap canvas = new Bitmap(MAX_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE)) // Create a 32x32 canvas
-                        using (Graphics g = Graphics.FromImage(canvas))
-                        {
-                            g.Clear(Color.Transparent); // Make background transparent
-                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                            g.DrawImage(img, (MAX_THUMBNAIL_SIZE - scaledSize.Width) / 2, (MAX_THUMBNAIL_SIZE - scaledSize.Height) / 2, scaledSize.Width, scaledSize.Height);
-
-                            var icon = Icon.FromHandle(canvas.GetHicon());
-                            state.icon = icon;
-                        }
-                    }
+                    using (Icon temporaryIcon = Icon.FromHandle(iconHandle))
+                        return (Icon)temporaryIcon.Clone();
                 }
-                IconThumbnailLoaded?.Invoke(this, new EventArgs());
-                semaphore.Release();
-            });
+                finally
+                {
+                    DestroyIcon(iconHandle);
+                }
+            }
+        }
 
-            return state;
+        private static Icon ExtractAssociatedIcon(string path)
+        {
+            Icon icon = null;
+            try
+            {
+                icon = Icon.ExtractAssociatedIcon(path);
+                return icon != null ? (Icon)icon.Clone() : (Icon)IconUtil.UnknownFile.Clone();
+            }
+            catch
+            {
+                return (Icon)IconUtil.UnknownFile.Clone();
+            }
+            finally
+            {
+                icon?.Dispose();
+            }
+        }
+
+        private void RaiseThumbnailLoaded()
+        {
+            EventHandler handler = IconThumbnailLoaded;
+            if (handler == null || disposed)
+                return;
+
+            if (synchronizationContext != null)
+                synchronizationContext.Post(_ => handler(this, EventArgs.Empty), null);
+            else
+                handler(this, EventArgs.Empty);
         }
 
         public static Size GetScaledSize(int originalWidth, int originalHeight, int maxWidth, int maxHeight)
         {
+            if (originalWidth <= 0 || originalHeight <= 0 || maxWidth <= 0 || maxHeight <= 0)
+                return Size.Empty;
+
             float ratio = Math.Min((float)maxWidth / originalWidth, (float)maxHeight / originalHeight);
-            int newWidth = (int)(originalWidth * ratio);
-            int newHeight = (int)(originalHeight * ratio);
-            return new Size(newWidth, newHeight);
+            return new Size(
+                Math.Max(1, (int)Math.Round(originalWidth * ratio)),
+                Math.Max(1, (int)Math.Round(originalHeight * ratio)));
         }
 
+        public void Dispose()
+        {
+            lock (cacheLock)
+            {
+                if (disposed)
+                    return;
+
+                disposed = true;
+                foreach (Icon icon in iconCache.Values)
+                    icon.Dispose();
+                for (int index = 0; index < retiredIcons.Count; index++)
+                    retiredIcons[index].Dispose();
+                iconCache.Clear();
+                retiredIcons.Clear();
+                pendingThumbnails.Clear();
+            }
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool DestroyIcon(IntPtr handle);
     }
 }
